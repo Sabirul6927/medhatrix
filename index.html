@@ -1183,7 +1183,7 @@ $('#rPrint').onclick = () => {
       </div>
     </div>
     <div style="height:2px;background:linear-gradient(90deg,#c9a227,#f5c451,#c9a227);margin:0 0 6mm"></div>
-    <div style="font-size:8.5pt;letter-spacing:.3em;color:#666">CERTIFICATE OF ACHIEVEMENT</div>
+    <div style="font-size:8.5pt;letter-spacing:.3em;color:#666">CERTIFICATE OF ACHIEVEMENT · DIGITAL</div>
     <div style="font-size:22pt;color:#0d3f74;margin:4mm 0 2mm;font-weight:700">সার্টিফিকেট</div>
     <div style="font-size:10pt;color:#444;margin-bottom:3mm">এই সার্টিফিকেট গর্বের সঙ্গে প্রদান করা হলো</div>
     <div style="font-size:19pt;font-weight:700;color:#0d3f74;border-bottom:2px solid #c9a227;
@@ -1194,16 +1194,24 @@ $('#rPrint').onclick = () => {
     <div style="font-size:17pt;font-weight:800;margin:4mm 0;color:#0d3f74">
       ${LAST.ok} / ${LAST.total} নম্বর · ${LAST.pct}% · গ্রেড ${LAST.grade}
     </div>
-    <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:12mm;font-size:8.5pt;color:#555">
-      <div style="text-align:left">
-        <div>সার্টিফিকেট নম্বর</div>
-        <div style="font-family:monospace;font-size:10pt;color:#0d3f74;font-weight:700">${code}</div>
-        <div style="margin-top:2mm">তারিখ: ${new Date(LAST.at).toLocaleDateString('en-GB')}</div>
+    <div style="margin-top:10mm;border-top:1px dashed #c9a227;padding-top:4mm;display:flex;
+      justify-content:space-between;align-items:flex-end;font-size:8.5pt;color:#555;text-align:left">
+      <div>
+        <div style="font-size:7pt;letter-spacing:.15em;color:#999">DIGITAL CERTIFICATE ID</div>
+        <div style="font-family:monospace;font-size:10.5pt;color:#0d3f74;font-weight:700">${code}</div>
+        <div style="margin-top:2mm">প্রদানের তারিখ: ${new Date(LAST.at).toLocaleDateString('en-GB')}</div>
       </div>
       <div style="text-align:right">
-        <div style="border-top:1px solid #999;padding-top:1mm;min-width:45mm">
-          ${esc(S.settings.founder || 'Sabirul Islam')}<br><span style="font-size:7.5pt">Founder, ${esc(S.settings.org || 'MEDHATRIX')}</span>
-        </div>
+        <div style="font-size:7pt;letter-spacing:.15em;color:#999">ISSUED DIGITALLY BY</div>
+        <div style="font-weight:700;color:#0d3f74">${esc(S.settings.org || 'MEDHATRIX')}</div>
+        <div style="font-size:7.5pt">${esc(S.settings.founder || 'Sabirul Islam')}, Founder</div>
+      </div>
+    </div>
+    <div style="margin-top:4mm;display:flex;align-items:center;justify-content:center;gap:4mm">
+      <img src="${certQR(code)}" alt="QR" style="width:22mm;height:22mm">
+      <div style="font-size:7pt;color:#888;line-height:1.6;text-align:left;max-width:90mm">
+        এটি একটি ডিজিটাল সার্টিফিকেট — হাতে স্বাক্ষর বা সিলমোহরের প্রয়োজন নেই।<br>
+        QR স্ক্যান করলে বা সাইটে সার্টিফিকেট আইডি দিলে যাচাই করা যাবে।
       </div>
     </div>
     <div style="margin-top:6mm;font-size:7pt;color:#888">
@@ -1212,6 +1220,7 @@ $('#rPrint').onclick = () => {
     </div>
   </div>`;
   doPrint(html);
+  try { certSave(code, LAST); } catch (e) {}
 };
 
 /* ================= RESULTS ================= */
@@ -3611,6 +3620,64 @@ function schedulePanel() {
   renderSchedules();
 }
 
+/* ================= DIGITAL CERTIFICATE VERIFICATION ================= */
+function certQR(code) {
+  const url = siteBase() + '#verify=' + encodeURIComponent(code);
+  return 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&margin=0&data=' + encodeURIComponent(url);
+}
+async function certSave(code, rec) {
+  if (typeof sbOn !== 'function' || !sbOn()) return null;
+  try {
+    return await sbFetch('/rest/v1/certificates', {
+      method: 'POST',
+      headers: { Prefer: 'return=minimal' },
+      body: { code, name: rec.name, quiz: rec.quizTitle || '', score: rec.ok,
+              total: rec.total, pct: rec.pct, grade: rec.grade, issued_at: rec.at }
+    });
+  } catch (e) { return null; }
+}
+async function verifyCert(code) {
+  if (typeof sbOn !== 'function' || !sbOn()) return { ok: false, msg: 'ডেটাবেস সংযুক্ত নয়' };
+  try {
+    const r = await sbFetch('/rest/v1/certificates?code=eq.' + encodeURIComponent(code) + '&select=*');
+    if (Array.isArray(r) && r.length) return { ok: true, data: r[0] };
+    return { ok: false, msg: 'এই কোডে কোনো সার্টিফিকেট পাওয়া যায়নি' };
+  } catch (e) { return { ok: false, msg: 'যাচাই করা যাচ্ছে না — ইন্টারনেট দেখুন' }; }
+}
+async function handleVerifyHash() {
+  const h = location.hash || '';
+  if (h.indexOf('#verify=') !== 0) return false;
+  const code = decodeURIComponent(h.slice(8));
+  let m = document.getElementById('verifyModal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'verifyModal';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:200;display:flex;' +
+      'align-items:center;justify-content:center;padding:16px';
+    document.body.appendChild(m);
+  }
+  m.innerHTML = '<div class="card" style="max-width:460px;width:100%;margin:0;text-align:center">' +
+    '<h3 style="margin:0 0 10px">সার্টিফিকেট যাচাই</h3>' +
+    '<div style="font-family:monospace;color:var(--accent);margin-bottom:12px">' + esc(code) + '</div>' +
+    '<div id="verBody">যাচাই করা হচ্ছে…</div>' +
+    '<button class="btn ghost" id="verClose" style="margin-top:14px;width:100%">বন্ধ</button></div>';
+  m.querySelector('#verClose').onclick = () => { m.remove(); location.hash = ''; };
+  const r = await verifyCert(code);
+  const body = m.querySelector('#verBody');
+  body.innerHTML = r.ok
+    ? '<div style="background:rgba(52,211,153,.15);border:1px solid var(--ok);border-radius:12px;padding:14px;text-align:left">' +
+      '<div style="color:var(--ok);font-weight:800;margin-bottom:8px">✓ বৈধ সার্টিফিকেট</div>' +
+      '<div><b>' + esc(r.data.name) + '</b></div>' +
+      '<div style="font-size:.86em;color:var(--muted);margin-top:6px">' +
+      esc(r.data.quiz || '') + '<br>নম্বর: ' + r.data.score + '/' + r.data.total +
+      ' · ' + r.data.pct + '% · গ্রেড ' + esc(r.data.grade) + '<br>প্রদান: ' +
+      new Date(r.data.issued_at).toLocaleDateString('en-GB') + '</div></div>'
+    : '<div style="background:rgba(248,113,113,.15);border:1px solid var(--bad);border-radius:12px;padding:14px">' +
+      '<div style="color:var(--bad);font-weight:800">✗ যাচাই হয়নি</div>' +
+      '<div style="font-size:.86em;margin-top:6px">' + esc(r.msg) + '</div></div>';
+  return true;
+}
+
 /* ---- final boot ---- */
 try { const c = JSON.parse(localStorage.getItem('mdx_sbcfg') || 'null');
   if (c && c.url && c.key) { SB.url = c.url; SB.key = c.key; } } catch (e) {}
@@ -3625,6 +3692,7 @@ setTimeout(() => { if (sbOn()) { sbSync(); } if (typeof sbPanel === 'function') 
   if (typeof addTutorButton === 'function') addTutorButton();
   if (typeof schedulePanel === 'function') schedulePanel();
   if (typeof handlePlayHash === 'function') handlePlayHash();
+  if (typeof handleVerifyHash === 'function') handleVerifyHash();
   if (typeof seedBank2 === 'function') { const n = seedBank2(); if (n) showToast(n + 'টি নতুন প্রশ্ন যোগ হয়েছে', 'success'); } }, 400);
 
 </script>
