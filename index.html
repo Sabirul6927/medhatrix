@@ -2103,7 +2103,14 @@ async function doLogin() {
       sbSync();
       return;
     } catch (e) {
-      err.textContent = e.message || 'ভুল ইমেইল বা পাসওয়ার্ড';
+      const msg = String(e.message || '');
+      if (/failed to fetch|network|load failed/i.test(msg)) {
+        err.innerHTML = 'সার্ভারে পৌঁছানো যাচ্ছে না — Project URL ঠিক আছে কিনা দেখুন। ' +
+          '<a href="javascript:void(0)" id="cfgLink" onclick="openSbConfig();return false;" ' +
+          'style="color:var(--accent);text-decoration:underline">সংযোগ সেটিংস</a>';
+      } else {
+        err.textContent = msg || 'ভুল ইমেইল বা পাসওয়ার্ড';
+      }
       err.style.display = 'block';
       return;
     }
@@ -2727,6 +2734,44 @@ function importPanel() {
     rd.readAsText(f); ev.target.value = '';
   };
 }
+
+
+/* ---------- connection settings (reachable before login) ---------- */
+function openSbConfig() {
+  const old = document.getElementById('sbCfgModal');
+  if (old) old.remove();
+  const m = document.createElement('div');
+  m.id = 'sbCfgModal';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px';
+  m.innerHTML = '<div class="card" style="max-width:420px;width:100%;margin:0">' +
+    '<h3>সংযোগ সেটিংস</h3>' +
+    '<p class="hint">Supabase → Settings → API Keys থেকে Project URL ও Publishable key কপি করুন।</p>' +
+    '<label class="fl">Project URL</label><input id="cfgUrl" value="' + (SB.url || '') + '" placeholder="https://xxxxx.supabase.co">' +
+    '<label class="fl">Publishable key</label><input id="cfgKey" value="' + (SB.key || '') + '" placeholder="sb_publishable_...">' +
+    '<div id="cfgMsg" class="hint" style="margin-top:8px"></div>' +
+    '<div style="display:flex;gap:8px;margin-top:12px">' +
+    '<button class="btn" id="cfgSave">সেভ ও পরীক্ষা</button>' +
+    '<button class="btn ghost" id="cfgClose">বন্ধ</button></div></div>';
+  document.body.appendChild(m);
+  m.querySelector('#cfgClose').onclick = () => m.remove();
+  m.querySelector('#cfgSave').onclick = async () => {
+    let u = m.querySelector('#cfgUrl').value.trim().replace(/\/+$/, '');
+    const k = m.querySelector('#cfgKey').value.trim();
+    if (u && !/^https?:\/\//.test(u)) u = 'https://' + u;
+    SB.url = u; SB.key = k;
+    try { localStorage.setItem('mdx_sbcfg', JSON.stringify({ url: u, key: k })); } catch (e) {}
+    const msg = m.querySelector('#cfgMsg');
+    msg.textContent = 'পরীক্ষা করা হচ্ছে…';
+    try {
+      const r = await fetch(u + '/rest/v1/notes?select=id&limit=1', { headers: { apikey: k, Authorization: 'Bearer ' + k } });
+      if (r.ok) { msg.innerHTML = '<span style="color:var(--ok)">সংযোগ সফল ✓</span>'; }
+      else { msg.innerHTML = '<span style="color:var(--bad)">ব্যর্থ (' + r.status + ') — URL/কী ঠিক আছে কিনা দেখুন</span>'; }
+    } catch (e) {
+      msg.innerHTML = '<span style="color:var(--bad)">পৌঁছানো যাচ্ছে না — URL ভুল বা ইন্টারনেট নেই</span>';
+    }
+  };
+}
+window.openSbConfig = openSbConfig;
 
 /* ---- final boot ---- */
 try { const c = JSON.parse(localStorage.getItem('mdx_sbcfg') || 'null');
