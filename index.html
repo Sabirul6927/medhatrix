@@ -94,6 +94,18 @@ font-size:.78em;font-weight:800;cursor:pointer;display:flex;align-items:center;j
 .cell.ans{background:rgba(52,211,153,.2);border-color:var(--ok);color:var(--ok)}
 .cell.cur{outline:2px solid var(--accent);outline-offset:2px}
 #printArea{display:none}
+.brandbar{display:flex;align-items:center;gap:4mm;margin-bottom:2mm}
+.brandbar .blogo{width:16mm;height:16mm;object-fit:contain}
+.brandbar .borg{font-size:15pt;font-weight:800;letter-spacing:.14em;color:#0d3f74}
+.brandbar .btag{font-size:7.5pt;letter-spacing:.22em;color:#b8860b}
+.goldrule{height:2px;background:linear-gradient(90deg,#c9a227,#f5c451,#c9a227);margin:2mm 0 4mm}
+.btitle{text-align:center;font-size:12.5pt;font-weight:800;color:#0d3f74;margin-bottom:1mm}
+.bsub{text-align:center;font-size:9pt;color:#555;margin-bottom:4mm}
+.pm{display:flex;justify-content:space-between;border:1px solid #0d3f74;border-radius:2mm;
+  padding:2mm 3mm;font-size:9pt;margin-bottom:3mm;background:#f4f8fd}
+.pnote{font-size:8.5pt;color:#555;margin-bottom:4mm;font-style:italic}
+.bfoot{display:flex;justify-content:space-between;font-size:7.5pt;color:#777;
+  border-top:1px solid #ddd;margin-top:6mm;padding-top:2mm}
 /* ---- v3: hero, ticker, quick cards, avatar ---- */
 .hero{background:linear-gradient(135deg,var(--card2),var(--card));border:1px solid var(--line);
   border-radius:18px;padding:16px;display:flex;gap:14px;align-items:center;margin-bottom:12px;
@@ -996,13 +1008,33 @@ function doPrint(html) {
   area.innerHTML = html;
   window.print();
 }
+function brandHeader(title, sub) {
+  const logo = (document.getElementById('logo') || {}).src || '';
+  return `<div class="brandbar">
+    ${logo ? `<img src="${logo}" class="blogo">` : ''}
+    <div class="btxt">
+      <div class="borg">${esc(S.settings.org || 'MEDHATRIX')}</div>
+      <div class="btag">${esc(S.settings.tagline || 'LEARN · THINK · ACHIEVE')}</div>
+    </div>
+  </div>
+  <div class="goldrule"></div>
+  <div class="btitle">${esc(title)}</div>
+  ${sub ? `<div class="bsub">${esc(sub)}</div>` : ''}`;
+}
+function brandFooter() {
+  return `<div class="bfoot">
+    <span>${esc(S.settings.org || 'MEDHATRIX')} · ${esc(S.settings.founder || 'Sabirul Islam')}, Founder</span>
+    <span>${new Date().toLocaleDateString('en-GB')}</span></div>`;
+}
 function printPaper() {
-  const qs = S.questions.slice(0, 100);
+  const qs = liveQuestions ? liveQuestions().slice(0, 100) : S.questions.slice(0, 100);
   if (!qs.length) { toast('প্রশ্ন নেই'); return; }
-  const html = `<h1>${esc(S.settings.org)} — Question Paper</h1>
-    <div class="pm"><span>প্রশ্ন: ${qs.length}</span><span>পূর্ণমান: ${qs.length}</span><span>সময়: ৬০ মিনিট</span></div>
-    ${qs.map((q, i) => `<div class="pq"><b>${String(i + 1).padStart(2, '0')}.</b> ${esc(q.text)}
-      <div class="po">${q.options.map((o, k) => `(${L[k]}) ${esc(o)}`).join(' &nbsp;&nbsp; ')}</div></div>`).join('')}`;
+  const html = brandHeader('প্রশ্নপত্র · Question Paper', S.profile.board + ' · শ্রেণি ' + S.profile.cls) +
+    `<div class="pm"><span>প্রশ্ন: ${qs.length}</span><span>পূর্ণমান: ${qs.length}</span><span>সময়: ৬০ মিনিট</span></div>` +
+    `<div class="pnote">সব প্রশ্নের উত্তর দিন। প্রতিটি প্রশ্নের মান ১।</div>` +
+    qs.map((q, i) => `<div class="pq"><b>${String(i + 1).padStart(2, '0')}.</b> ${esc(q.text)}
+      <div class="po">${q.options.map((o, k) => `(${L[k]}) ${esc(o)}`).join(' &nbsp;&nbsp; ')}</div></div>`).join('') +
+    brandFooter();
   doPrint(html);
 }
 
@@ -1026,8 +1058,11 @@ $('#qStart').onclick = () => {
   const n = Math.max(1, +$('#qCount').value || 20);
   const mins = Math.max(1, +$('#qTime').value || 20);
   const name = $('#qName').value.trim() || 'পরীক্ষার্থী';
-  if (S.questions.length < n) { toast('ব্যাংকে যথেষ্ট প্রশ্ন নেই'); return; }
-  const pool = S.questions.slice().sort(() => Math.random() - 0.5).slice(0, n);
+  const avail = (typeof liveQuestions === 'function' ? liveQuestions() : S.questions);
+  if (!avail.length) { toast('ব্যাংকে কোনো প্রশ্ন নেই — আগে প্রশ্ন যোগ করুন'); return; }
+  let use = n;
+  if (avail.length < n) { use = avail.length; toast('ব্যাংকে মাত্র ' + bn(use) + 'টি প্রশ্ন আছে — সবগুলোই দেওয়া হলো', 'warn'); }
+  const pool = avail.slice().sort(() => Math.random() - 0.5).slice(0, use);
   Q = { name, qs: pool, ans: new Array(pool.length).fill(null), idx: 0, left: mins * 60, total: mins * 60 };
   $('#quizSetup').classList.add('hide'); $('#quizRun').classList.remove('hide');
   $('#quizResult').classList.add('hide');
@@ -1093,6 +1128,7 @@ function finishQuiz() {
     }
   });
   S.results.unshift({ name: LAST.name, ok, total: LAST.total, pct, grade, at: LAST.at });
+  if (typeof touchStreak === 'function') touchStreak();
   save();
   $('#quizRun').classList.add('hide'); $('#quizResult').classList.remove('hide');
   $('#rScore').textContent = bn(ok) + ' / ' + bn(Q.qs.length);
@@ -1443,12 +1479,7 @@ function renderSuggestions() {
       <div style="margin-top:6px"><button class="btn sm ghost" data-sread="${s.id}">দেখুন</button></div></div>`).join('')
     : '<div class="qrow" style="color:var(--muted)">এই শ্রেণির জন্য সাজেশন নেই।</div>';
   $('#sugList').querySelectorAll('[data-sread]').forEach(b => b.onclick = () => {
-    const s = S.suggestions.find(x => x.id === b.dataset.sread);
-    $('#noteTitle').textContent = s.title;
-    $('#noteMeta').textContent = [s.subject, s.year, 'সাজেশন'].filter(Boolean).join(' · ');
-    $('#noteBody').innerHTML = esc(s.body).replace(/\n/g, '<br>');
-    $('#noteView').classList.remove('hide');
-    $('#noteView').scrollIntoView({ behavior: 'smooth' });
+    showReader(S.suggestions.find(x => x.id === b.dataset.sread), 'সাজেশন');
   });
 }
 function addSuggestion() {
@@ -3054,6 +3085,263 @@ function noticeLive(n) {
   return true;
 }
 
+
+/* ---------- universal reader (note / suggestion / notice) ---------- */
+function showReader(item, kind) {
+  if (!item) return;
+  let m = document.getElementById('readerModal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'readerModal';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:180;display:flex;' +
+      'align-items:center;justify-content:center;padding:14px';
+    document.body.appendChild(m);
+    m.onclick = e => { if (e.target === m) m.remove(); };
+  }
+  const meta = [item.subject, item.chapter, kind || item.type, item.year].filter(Boolean).join(' · ');
+  m.innerHTML = '<div class="card" style="max-width:680px;width:100%;max-height:88vh;overflow:auto;margin:0">' +
+    '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">' +
+    '<div><h3 style="margin:0 0 4px">' + esc(item.title || '—') + '</h3>' +
+    '<div style="font-size:.78em;color:var(--muted)">' + esc(meta) + '</div></div>' +
+    '<button class="btn sm ghost" id="readerClose">বন্ধ</button></div>' +
+    '<div style="margin-top:12px;line-height:1.95;font-size:.95em">' +
+    esc(item.body || '').replace(/\n/g, '<br>') + '</div>' +
+    '<div style="display:flex;gap:8px;margin-top:14px">' +
+    '<button class="btn sm" id="readerPrint">প্রিন্ট</button></div></div>';
+  m.querySelector('#readerClose').onclick = () => m.remove();
+  m.querySelector('#readerPrint').onclick = () => doPrint(brandHeader(item.title || 'MEDHATRIX', meta) +
+    '<div style="line-height:1.9">' + esc(item.body || '').replace(/\n/g, '<br>') + '</div>' + brandFooter());
+}
+
+/* ================= EXTRAS: search, streak, leaderboard, flashcards ================= */
+/* ---- global search ---- */
+function globalSearch(q) {
+  q = (q || '').trim().toLowerCase();
+  if (q.length < 2) return [];
+  const out = [];
+  (typeof liveNotes === 'function' ? liveNotes() : S.notes).forEach(n => {
+    if ((n.title + ' ' + n.body).toLowerCase().includes(q))
+      out.push({ kind: 'নোট', title: n.title, body: n.body, subject: n.subject, ref: n });
+  });
+  (typeof liveQuestions === 'function' ? liveQuestions() : S.questions).forEach(x => {
+    if ((x.text + ' ' + (x.options || []).join(' ')).toLowerCase().includes(q))
+      out.push({ kind: 'প্রশ্ন', title: x.text, body: (x.options || []).join(' · '), subject: x.subject, ref: x });
+  });
+  (typeof liveNotices === 'function' ? liveNotices() : S.notices).forEach(n => {
+    if ((n.title + ' ' + (n.body || '')).toLowerCase().includes(q))
+      out.push({ kind: 'নোটিশ', title: n.title, body: n.body, ref: n });
+  });
+  (S.suggestions || []).forEach(s2 => {
+    if ((s2.title + ' ' + (s2.body || '')).toLowerCase().includes(q))
+      out.push({ kind: 'সাজেশন', title: s2.title, body: s2.body, subject: s2.subject, ref: s2 });
+  });
+  return out.slice(0, 40);
+}
+function openSearch() {
+  let m = document.getElementById('searchModal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'searchModal';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:190;display:flex;' +
+      'align-items:flex-start;justify-content:center;padding:40px 14px';
+    document.body.appendChild(m);
+    m.onclick = e => { if (e.target === m) m.remove(); };
+  }
+  m.innerHTML = '<div class="card" style="max-width:640px;width:100%;margin:0;max-height:80vh;overflow:auto">' +
+    '<div style="display:flex;gap:8px"><input id="gsInput" placeholder="নোট, প্রশ্ন, নোটিশ, সাজেশন খুঁজুন…" style="flex:1">' +
+    '<button class="btn sm ghost" id="gsClose">বন্ধ</button></div>' +
+    '<div id="gsOut" style="margin-top:12px"></div></div>';
+  const inp = m.querySelector('#gsInput'), out = m.querySelector('#gsOut');
+  const run = () => {
+    const res = globalSearch(inp.value);
+    out.innerHTML = inp.value.trim().length < 2
+      ? '<p class="hint">অন্তত দুই অক্ষর লিখুন</p>'
+      : (res.length ? res.map((r, i) => '<div class="qrow"><div class="qt">' + esc(r.title) +
+          ' <span class="pill">' + r.kind + '</span></div><div class="qo">' + esc((r.body || '').slice(0, 90)) + '</div>' +
+          '<div style="margin-top:6px"><button class="btn sm ghost" data-sr="' + i + '">খুলুন</button></div></div>').join('')
+        : '<p class="hint">কিছু পাওয়া যায়নি</p>');
+    out.querySelectorAll('[data-sr]').forEach(b => b.onclick = () => {
+      const r = res[+b.dataset.sr];
+      m.remove();
+      if (r.kind === 'প্রশ্ন') { showReader({ title: r.title, body: (r.ref.options || []).join('\n') + '\n\nসঠিক: ' + r.ref.options[r.ref.answer] }, 'প্রশ্ন'); }
+      else showReader(r.ref, r.kind);
+    });
+  };
+  inp.oninput = run; run();
+  m.querySelector('#gsClose').onclick = () => m.remove();
+  setTimeout(() => inp.focus(), 60);
+}
+
+/* ---- streak ---- */
+function touchStreak() {
+  const today = new Date().toISOString().slice(0, 10);
+  if (!S.streak) S.streak = { count: 0, last: '' };
+  if (S.streak.last === today) return;
+  const y = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+  S.streak.count = (S.streak.last === y) ? (S.streak.count + 1) : 1;
+  S.streak.last = today;
+  save();
+}
+function streakHTML() {
+  const n = (S.streak && S.streak.count) || 0;
+  return '<div style="display:flex;align-items:center;gap:10px;background:var(--card2);border:1px solid var(--line);' +
+    'border-radius:12px;padding:10px 14px;margin-bottom:10px">' +
+    '<div style="font-size:1.6em">🔥</div><div><b>' + n + ' দিন</b>' +
+    '<div style="font-size:.75em;color:var(--muted)">টানা পড়ার স্ট্রিক</div></div>' +
+    '<div style="margin-left:auto;font-size:.75em;color:var(--muted)">আজ পড়েছেন ✓</div></div>';
+}
+
+/* ---- leaderboard ---- */
+function leaderboardHTML() {
+  const best = {};
+  (S.results || []).forEach(r => {
+    const k = r.name || 'শিক্ষার্থী';
+    if (!best[k] || r.pct > best[k].pct) best[k] = { name: k, pct: r.pct, ok: r.ok, total: r.total };
+  });
+  const list = Object.values(best).sort((a, b) => b.pct - a.pct).slice(0, 10);
+  if (!list.length) return '';
+  return '<div class="card"><h3>🏆 মেধাতালিকা (এই ডিভাইসে)</h3><div class="list">' +
+    list.map((r, i) => '<div class="qrow" style="display:flex;justify-content:space-between;align-items:center">' +
+      '<div><b>' + (i + 1) + '. ' + esc(r.name) + '</b><div class="qo">' + r.ok + '/' + r.total + '</div></div>' +
+      '<div style="font-weight:800;color:var(--accent)">' + r.pct + '%</div></div>').join('') + '</div></div>';
+}
+
+/* ---- flashcards ---- */
+let FC = { list: [], idx: 0, known: {} };
+function startFlashcards() {
+  const pool = (typeof liveQuestions === 'function' ? liveQuestions() : S.questions);
+  if (!pool.length) { showToast('প্রশ্ন নেই', 'warn'); return; }
+  FC = { list: pool.slice().sort(() => Math.random() - 0.5).slice(0, 20), idx: 0, known: {} };
+  renderFlashcard();
+}
+function renderFlashcard() {
+  let m = document.getElementById('fcModal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'fcModal';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:195;display:flex;' +
+      'align-items:center;justify-content:center;padding:14px';
+    document.body.appendChild(m);
+  }
+  const q = FC.list[FC.idx];
+  if (!q) { m.remove(); return; }
+  const revealed = !!FC.known[FC.idx];
+  m.innerHTML = '<div class="card" style="max-width:560px;width:100%;margin:0;text-align:center">' +
+    '<div style="font-size:.75em;color:var(--muted);margin-bottom:8px">কার্ড ' + (FC.idx + 1) + ' / ' + FC.list.length + '</div>' +
+    '<div style="font-size:1.1em;font-weight:600;line-height:1.7;min-height:80px;display:flex;align-items:center;justify-content:center">' +
+    esc(q.text) + '</div>' +
+    (revealed ? '<div style="margin-top:14px;padding:12px;background:var(--card2);border-radius:10px;color:var(--ok);font-weight:700">' +
+      esc(q.options[q.answer]) + '</div>' : '<button class="btn" id="fcShow" style="margin-top:14px">উত্তর দেখুন</button>') +
+    '<div style="display:flex;gap:8px;margin-top:16px">' +
+    '<button class="btn ghost" id="fcPrev" style="flex:1"' + (FC.idx === 0 ? ' disabled' : '') + '>←</button>' +
+    '<button class="btn" id="fcNext" style="flex:1">' + (FC.idx === FC.list.length - 1 ? 'শেষ' : '→') + '</button></div>' +
+    '<button class="btn ghost" id="fcClose" style="width:100%;margin-top:8px">বন্ধ</button></div>';
+  const sh = m.querySelector('#fcShow');
+  if (sh) sh.onclick = () => { FC.known[FC.idx] = true; renderFlashcard(); };
+  m.querySelector('#fcPrev').onclick = () => { if (FC.idx > 0) { FC.idx--; renderFlashcard(); } };
+  m.querySelector('#fcNext').onclick = () => {
+    if (FC.idx < FC.list.length - 1) { FC.idx++; renderFlashcard(); } else m.remove();
+  };
+  m.querySelector('#fcClose').onclick = () => m.remove();
+}
+
+/* ---- home extras ---- */
+function homeExtras() {
+  const host = document.getElementById('tab-home');
+  if (!host || document.getElementById('homeExtras')) return;
+  const box = document.createElement('div');
+  box.id = 'homeExtras';
+  box.innerHTML = '<div id="streakBox"></div><div id="lbBox"></div>' +
+    '<div class="card"><h3>দ্রুত শুরু</h3><div style="display:flex;gap:8px;flex-wrap:wrap">' +
+    '<button class="btn sm" id="btnFlash">🃏 ফ্ল্যাশকার্ড</button>' +
+    '<button class="btn sm ghost" id="btnSearch">🔍 খুঁজুন</button></div></div>';
+  host.appendChild(box);
+  document.getElementById('streakBox').innerHTML = streakHTML();
+  document.getElementById('lbBox').innerHTML = leaderboardHTML();
+  document.getElementById('btnFlash').onclick = startFlashcards;
+  document.getElementById('btnSearch').onclick = openSearch;
+}
+
+/* ================= AI STUDY ASSISTANT (student-facing) ================= */
+function aiTutorOpen() {
+  let m = document.getElementById('tutorModal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'tutorModal';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:198;display:flex;' +
+      'align-items:center;justify-content:center;padding:14px';
+    document.body.appendChild(m);
+    m.onclick = e => { if (e.target === m) m.remove(); };
+  }
+  const c = (typeof aiCfg === 'function') ? aiCfg() : {};
+  m.innerHTML = '<div class="card" style="max-width:620px;width:100%;margin:0;max-height:86vh;display:flex;flex-direction:column">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">' +
+    '<b>🤖 AI সহায়ক</b><button class="btn sm ghost" id="tClose">বন্ধ</button></div>' +
+    (c.key
+      ? '<div id="tChat" style="flex:1;overflow:auto;min-height:180px;max-height:46vh;border:1px solid var(--line);' +
+        'border-radius:12px;padding:12px;background:var(--card2);font-size:.9em;line-height:1.7"></div>' +
+        '<div style="display:flex;gap:8px;margin-top:10px">' +
+        '<input id="tInput" placeholder="যেকোনো প্রশ্ন লিখুন…" style="flex:1">' +
+        '<button class="btn sm" id="tSend">পাঠান</button></div>' +
+        '<p class="hint" id="tHint">উত্তর ইন্টারনেট থেকে আসে — ভুল থাকতে পারে, বই মিলিয়ে দেখুন।</p>'
+      : '<p class="hint">AI এখনো চালু হয়নি। অ্যাডমিন প্যানেল → AI প্রশ্ন জেনারেটর কার্ডে Gemini কী বসালে এটি চালু হবে।</p>');
+  m.querySelector('#tClose').onclick = () => m.remove();
+  if (!c.key) return;
+
+  const chat = m.querySelector('#tChat'), inp = m.querySelector('#tInput');
+  const add = (who, text) => {
+    const d = document.createElement('div');
+    d.style.cssText = 'margin-bottom:10px;padding:8px 10px;border-radius:10px;' +
+      (who === 'me' ? 'background:rgba(56,189,248,.14);margin-left:30px' : 'background:var(--card);margin-right:30px');
+    d.innerHTML = '<div style="font-size:.72em;color:var(--muted);margin-bottom:3px">' +
+      (who === 'me' ? 'আপনি' : 'AI') + '</div>' + esc(text).replace(/\n/g, '<br>');
+    chat.appendChild(d); chat.scrollTop = chat.scrollHeight;
+    return d;
+  };
+  add('ai', 'আসসালামু আলাইকুম! পড়ার কোনো প্রশ্ন থাকলে লিখুন — সহজ ভাষায় বুঝিয়ে দেব।');
+
+  const send = async () => {
+    const q = inp.value.trim();
+    if (!q) return;
+    inp.value = '';
+    add('me', q);
+    const wait = add('ai', 'ভাবছি…');
+    try {
+      const model = c.model || 'gemini-2.0-flash';
+      const prompt = 'তুমি একজন বাংলা মাধ্যম স্কুল শিক্ষক। শিক্ষার্থীর প্রশ্নের উত্তর সহজ বাংলায়, ধাপে ধাপে দাও। ' +
+        'শ্রেণি: ' + (S.profile && S.profile.cls) + ', বিষয় প্রসঙ্গ থাকলে মানো। প্রশ্ন: ' + q;
+      const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' +
+        encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(c.key), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error((d.error && d.error.message) || ('HTTP ' + res.status));
+      const txt = (d.candidates && d.candidates[0] && d.candidates[0].content &&
+        d.candidates[0].content.parts.map(x => x.text).join('')) || 'উত্তর পাওয়া যায়নি';
+      wait.innerHTML = '<div style="font-size:.72em;color:var(--muted);margin-bottom:3px">AI</div>' +
+        esc(txt).replace(/\n/g, '<br>');
+    } catch (e) {
+      wait.innerHTML = '<span style="color:var(--bad)">উত্তর আসেনি: ' + esc(e.message) + '</span>';
+    }
+  };
+  m.querySelector('#tSend').onclick = send;
+  inp.onkeydown = e => { if (e.key === 'Enter') send(); };
+  setTimeout(() => inp.focus(), 80);
+}
+
+function addTutorButton() {
+  const host = document.getElementById('tab-home');
+  if (!host || document.getElementById('tutorBtn')) return;
+  const box = document.createElement('div');
+  box.className = 'card';
+  box.innerHTML = '<h3>AI সহায়ক</h3>' +
+    '<p class="hint" style="margin-bottom:10px">পড়ার যেকোনো প্রশ্ন লিখে সঙ্গে সঙ্গে উত্তর নিন।</p>' +
+    '<button class="btn" id="tutorBtn" style="width:100%">🤖 AI-কে প্রশ্ন করুন</button>';
+  host.appendChild(box);
+  box.querySelector('#tutorBtn').onclick = aiTutorOpen;
+}
+
 /* ---- final boot ---- */
 try { const c = JSON.parse(localStorage.getItem('mdx_sbcfg') || 'null');
   if (c && c.url && c.key) { SB.url = c.url; SB.key = c.key; } } catch (e) {}
@@ -3063,7 +3351,9 @@ initV3();
 setTimeout(() => { if (sbOn()) { sbSync(); } if (typeof sbPanel === 'function') sbPanel();
   if (typeof importPanel === 'function') importPanel();
   if (typeof aiPanel === 'function') aiPanel();
-  if (typeof phase1Panel === 'function') phase1Panel(); }, 400);
+  if (typeof phase1Panel === 'function') phase1Panel();
+  if (typeof homeExtras === 'function') homeExtras();
+  if (typeof addTutorButton === 'function') addTutorButton(); }, 400);
 
 </script>
 </body>
