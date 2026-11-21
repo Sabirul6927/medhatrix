@@ -963,15 +963,23 @@ function previewAI(list) {
 function renderBank() {
   $('#bankCount').textContent = bn(S.questions.length);
   const q = ($('#bankSearch').value || '').toLowerCase();
-  const list = q ? S.questions.filter(x => x.text.toLowerCase().includes(q)) : S.questions;
+  const src = liveQuestions();
+  const list = q ? src.filter(x => x.text.toLowerCase().includes(q)) : src;
   const box = $('#bankList');
   if (!list.length) { box.innerHTML = '<div class="qrow" style="text-align:center;color:var(--muted)">কোনো প্রশ্ন নেই</div>'; return; }
   box.innerHTML = list.slice(0, 300).map((x, i) => `<div class="qrow">
     <div class="qt">${bn(i + 1)}. ${esc(x.text)}</div>
     <div class="qo">${x.options.map((o, k) => `<span style="${x.answer === k ? 'color:var(--ok);font-weight:700' : ''}">(${L[k]}) ${esc(o)}</span>`).join(' &nbsp; ')}</div>
-    ${(typeof isAdmin === 'function' && isAdmin()) ? `<div style="margin-top:5px"><button class="btn sm ghost" data-del="${x.id}">মুছুন</button></div>` : ''}</div>`).join('');
+    ${(typeof isAdmin === 'function' && isAdmin()) ? `<div style="margin-top:5px">${statusBadge(x)}
+      <button class="btn sm ghost" data-pub="${x.id}">${isDraft(x) ? 'প্রকাশ করুন' : 'খসড়ায় ফেরান'}</button>
+      <button class="btn sm ghost" data-del="${x.id}">মুছুন</button></div>` : ''}</div>`).join('');
+  box.querySelectorAll('[data-pub]').forEach(b => b.onclick = () => {
+    const it = S.questions.find(x => x.id === b.dataset.pub);
+    setStatus('question', b.dataset.pub, isDraft(it) ? 'published' : 'draft');
+  });
   box.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
-    S.questions = S.questions.filter(x => x.id !== b.dataset.del); save(); renderBank();
+    if (!confirm('রিসাইকেল বিনে পাঠাবেন?')) return;
+    softDelete('question', b.dataset.del);
   });
 }
 $('#bankSearch').oninput = renderBank;
@@ -1294,8 +1302,8 @@ function renderStudy() {
   const subj = STUDY.subject && subs.includes(STUDY.subject) ? STUDY.subject : (subs[0] || '');
   STUDY.subject = subj;
   const chs = chaptersFor(p.board, p.cls, p.stream, p.sem, subj);
-  let notes = S.notes.filter(n => n.subject === subj && (!STUDY.chapter || n.chapter === STUDY.chapter));
-  if (!notes.length && !STUDY.chapter) notes = S.notes.slice();   /* খালি দেখাবে না */
+  let notes = liveNotes().filter(n => n.subject === subj && (!STUDY.chapter || n.chapter === STUDY.chapter));
+  if (!notes.length && !STUDY.chapter) notes = liveNotes().slice();   /* খালি দেখাবে না */
 
   $('#studyHead').textContent = `${p.board} · ${p.cls} · ${subj || 'বিষয় নেই'}`;
   const cnt = {};
@@ -1313,6 +1321,8 @@ function renderStudy() {
       <div style="margin-top:6px">
         <button class="btn sm" data-read="${n.id}">পড়ুন</button>
         <button class="btn sm ghost" data-bm="${n.id}">${n.bookmark ? 'বুকমার্ক সরান' : 'বুকমার্ক'}</button>
+        <button class="btn sm ghost admininline" data-editnote="${n.id}">সম্পাদনা</button>
+        <button class="btn sm ghost admininline" data-vernote="${n.id}">ভার্সন</button>
         <button class="btn sm ghost" data-delnote="${n.id}">মুছুন</button></div></div>`).join('')
     : '<div class="qrow" style="color:var(--muted)">এই অধ্যায়ে কোনো নোট নেই — নিচে যোগ করুন।</div>';
 
@@ -1326,6 +1336,8 @@ function renderStudy() {
   $('#studyNotes').querySelectorAll('[data-bm]').forEach(b => b.onclick = () => {
     const n = S.notes.find(x => x.id === b.dataset.bm); n.bookmark = !n.bookmark; save(); renderStudy();
   });
+  $('#studyNotes').querySelectorAll('[data-editnote]').forEach(b => b.onclick = () => editNote(b.dataset.editnote));
+  $('#studyNotes').querySelectorAll('[data-vernote]').forEach(b => b.onclick = () => noteVersions(b.dataset.vernote));
   $('#studyNotes').querySelectorAll('[data-delnote]').forEach(b => b.onclick = () => {
     if (typeof needAdmin === 'function' && !needAdmin()) return;
     if (!confirm('নোটটি মুছবেন?')) return;
@@ -1351,6 +1363,7 @@ function addNote() {
   if (!t || !b) { toast('শিরোনাম ও লেখা দিন'); return; }
   const subSel = $('#noteSubIn'), chSel = $('#noteChIn');
   S.notes.push({
+    status: 'draft',
     id: 'N' + Date.now().toString(36), title: t, body: b,
     board: S.profile.board, cls: S.profile.cls,
     subject: (subSel && subSel.value) || STUDY.subject,
@@ -2078,7 +2091,8 @@ function needAdmin(msg) {
   adminLogin();
   return false;
 }
-const AUTH = { id: 'medhatrix', pass: 'Medhatrix@2026' };
+function hashPw(s){let h1=0x811c9dc5,h2=0x1000193;for(let i=0;i<s.length;i++){const c=s.charCodeAt(i);h1^=c;h1=Math.imul(h1,16777619)>>>0;h2=(h2+Math.imul(c,2654435761))>>>0;}return (h1>>>0).toString(16).padStart(8,'0')+(h2>>>0).toString(16).padStart(8,'0');}
+const AUTH = { id: 'medhatrix', h: 'a64b07d9a50a6f43' };   /* পাসওয়ার্ড হ্যাশ আকারে — প্লেইন টেক্সট নেই */
 function adminLogin() {
   if (isAdmin()) { adminLogout(); return; }
   const m = $('#loginModal');
@@ -2116,7 +2130,7 @@ async function doLogin() {
     }
   }
   /* 2) offline fallback */
-  if (id === AUTH.id && pw === AUTH.pass) {
+  if (id === AUTH.id && hashPw(pw) === AUTH.h) {
     S.session = { admin: true, since: new Date().toISOString() };
     $('#loginModal').style.display = 'none';
     applyAccess(); renderNotices(); renderAdmin();
@@ -2212,7 +2226,7 @@ function renderQuickCards() {
 /* ---------- notices ---------- */
 function activeNotices() {
   const today = new Date().toISOString().slice(0, 10);
-  return S.notices.filter(n => !n.expiry || n.expiry >= today)
+  return liveNotices().filter(noticeLive)
     .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || new Date(b.createdAt) - new Date(a.createdAt));
 }
 function renderTicker() {
@@ -2236,6 +2250,7 @@ function renderNotices() {
       <div class="nm"><span>${esc(n.cat)}</span><span>${new Date(n.createdAt).toLocaleDateString('en-GB')}</span>
         ${n.expiry ? '<span>শেষ: ' + esc(n.expiry) + '</span>' : ''}
         <button class="btn sm ghost" data-nshare="${n.id}" style="margin-left:auto">শেয়ার</button>
+        <button class="btn sm ghost" data-npub="${n.id}">${isDraft(n) ? 'প্রকাশ করুন' : 'খসড়ায়'}</button>
         <button class="btn sm ghost" data-npin="${n.id}">${n.pinned ? 'আনপিন' : 'পিন'}</button>
         <button class="btn sm ghost" data-ndel="${n.id}">মুছুন</button></div></div>`).join('')
     : '<div style="color:var(--muted);font-size:.86em">কোনো নোটিশ নেই।</div>';
@@ -2245,6 +2260,11 @@ function renderNotices() {
     if (!confirm('নোটিশটি মুছবেন?')) return;
     S.notices = S.notices.filter(x => x.id !== b.dataset.ndel);
     save(); renderNotices(); renderTicker(); showToast('মুছে ফেলা হয়েছে', 'success');
+  });
+  box.querySelectorAll('[data-npub]').forEach(b => b.onclick = () => {
+    if (!needAdmin()) return;
+    const it = S.notices.find(x => x.id === b.dataset.npub);
+    setStatus('notice', b.dataset.npub, isDraft(it) ? 'published' : 'draft');
   });
   box.querySelectorAll('[data-npin]').forEach(b => b.onclick = () => {
     if (!needAdmin()) return;
@@ -2263,6 +2283,7 @@ function addNotice() {
   const t = $('#noTitle').value.trim();
   if (!t) { showToast('শিরোনাম দিন', 'warn'); $('#noTitle').focus(); return; }
   S.notices.unshift({
+    status: 'draft',
     id: 'NO' + Date.now().toString(36), title: t, body: $('#noBody').value.trim(),
     cat: $('#noCat').value, priority: $('#noPri').value, pinned: false,
     expiry: $('#noExp').value || '', createdAt: new Date().toISOString()
@@ -2438,9 +2459,10 @@ function addQuestionFromForm() {
   if (!text) { showToast('প্রশ্ন লিখুন', 'warn'); $('#qbText').focus(); return; }
   if (opts.filter(Boolean).length < 2) { showToast('অন্তত দুটি অপশন দিন', 'warn'); return; }
   S.questions.push({
+    status: 'draft',
     id: 'Q' + Date.now().toString(36), text, options: opts.map(o => o || '—'),
     answer: +$('#qbAns').value, subject: $('#qbSub').value, chapter: $('#qbCh').value,
-    difficulty: $('#qbDiff').value, source: 'manual'
+    difficulty: $('#qbDiff').value, source: 'manual', status: 'draft'
   });
   save(); renderBank(); renderHome();
   if (typeof sbInsert === 'function') sbInsert('questions', qToRow(S.questions[S.questions.length - 1]));
@@ -2451,7 +2473,7 @@ function addQuestionFromForm() {
 
 /* ================= SUPABASE BACKEND (optional, offline-safe) ================= */
 const SB = {
-  url: 'https://opafmrpxplnugczek.supabase.co',
+  url: 'https://opatfmrpxrplnugczeik.supabase.co',
   key: 'sb_publishable_kmWqlSxud75rEwDQwyNT1w_M_IVYg1D',
   token: null, email: null, lastError: ''
 };
@@ -2773,6 +2795,265 @@ function openSbConfig() {
 }
 window.openSbConfig = openSbConfig;
 
+
+/* ================= AI GENERATOR (Gemini free tier / OpenAI-compatible) ================= */
+function aiCfg() {
+  try { return JSON.parse(localStorage.getItem('mdx_ai') || '{}'); } catch (e) { return {}; }
+}
+function aiSave(c) { try { localStorage.setItem('mdx_ai', JSON.stringify(c)); } catch (e) {} }
+
+async function aiGenerate(opts) {
+  const c = aiCfg();
+  if (!c.key) throw new Error('AI কী দেওয়া হয়নি — অ্যাডমিন প্যানেলের AI কার্ডে কী বসান');
+  const prompt = 'তৈরি করো ' + opts.count + 'টি বহুনির্বাচনী প্রশ্ন। ' +
+    (opts.cls ? 'শ্রেণি: ' + opts.cls + '। ' : '') +
+    (opts.subject ? 'বিষয়: ' + opts.subject + '। ' : '') +
+    'টপিক: ' + opts.topic + '। কঠিনতা: ' + opts.diff + '। ভাষা: ' + opts.lang + '। ' +
+    'শুধু JSON অ্যারে দাও, প্রতিটি অবজেক্ট: {"q":"প্রশ্ন","o":["১","২","৩","৪"],"a":0} — ' +
+    'a হলো সঠিক অপশনের ইনডেক্স (0-3)। কোনো মার্কডাউন বা ব্যাখ্যা নয়।';
+
+  if (c.provider === 'gemini') {
+    const model = c.model || 'gemini-2.0-flash';
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' +
+      encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(c.key), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error((d.error && d.error.message) || ('HTTP ' + res.status));
+    const txt = (d.candidates && d.candidates[0] && d.candidates[0].content &&
+      d.candidates[0].content.parts.map(x => x.text).join('')) || '';
+    return parseAIJson(txt);
+  }
+  /* OpenAI-compatible */
+  const base = (c.base || 'https://api.openai.com/v1').replace(/\/$/, '');
+  const res = await fetch(base + '/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + c.key },
+    body: JSON.stringify({ model: c.model || 'gpt-4o-mini', temperature: 0.7,
+      messages: [{ role: 'user', content: prompt }] })
+  });
+  const d = await res.json();
+  if (!res.ok) throw new Error((d.error && d.error.message) || ('HTTP ' + res.status));
+  return parseAIJson(d.choices[0].message.content || '');
+}
+function parseAIJson(txt) {
+  const clean = String(txt).replace(/```json|```/g, '').trim();
+  const a = clean.indexOf('['), b = clean.lastIndexOf(']');
+  if (a < 0 || b < 0) throw new Error('AI সঠিক ফরম্যাটে উত্তর দেয়নি');
+  const arr = JSON.parse(clean.slice(a, b + 1));
+  return arr.map(x => ({ text: x.q, options: (x.o || []).slice(0, 4), answer: Math.max(0, Math.min(3, +x.a || 0)) }))
+    .filter(q => q.text && q.options.length >= 2);
+}
+
+function aiPanel() {
+  if (document.getElementById('aiCard')) return;
+  const host = document.getElementById('tab-admin');
+  if (!host) return;
+  const c = aiCfg();
+  const card = document.createElement('div');
+  card.className = 'card'; card.id = 'aiCard';
+  const clsOpts = ['V','VI','VII','VIII','IX','X','XI','XII'].map(x => '<option>' + x + '</option>').join('');
+  card.innerHTML = '<h3>AI প্রশ্ন জেনারেটর</h3>' +
+    '<p class="hint">Gemini-এর ফ্রি কী নিতে পারেন <b>aistudio.google.com</b> থেকে (ফ্রি, কার্ড লাগে না)। কী আপনার ব্রাউজারেই থাকে।</p>' +
+    '<div class="row"><div><label class="fl">প্রদানকারী</label><select id="aiProv">' +
+    '<option value="gemini"' + (c.provider === 'gemini' ? ' selected' : '') + '>Google Gemini (ফ্রি)</option>' +
+    '<option value="openai"' + (c.provider === 'openai' ? ' selected' : '') + '>OpenAI-সামঞ্জস্যপূর্ণ</option></select></div>' +
+    '<div><label class="fl">মডেল</label><input id="aiModel" value="' + (c.model || 'gemini-2.0-flash') + '"></div></div>' +
+    '<label class="fl">API কী</label><input id="aiKey" type="password" value="' + (c.key || '') + '" placeholder="AIza...">' +
+    '<div class="row"><div><label class="fl">শ্রেণি</label><select id="aiCls">' + clsOpts + '</select></div>' +
+    '<div><label class="fl">বিষয়</label><select id="aiSub"></select></div></div>' +
+    '<label class="fl">টপিক</label><input id="aiTopic" placeholder="যেমন: নিউটনের সূত্র">' +
+    '<div class="row3"><div><label class="fl">সংখ্যা</label><select id="aiCount"><option>5</option><option selected>10</option><option>15</option><option>20</option></select></div>' +
+    '<div><label class="fl">কঠিনতা</label><select id="aiDiff"><option value="সহজ">সহজ</option><option value="মধ্যম" selected>মধ্যম</option><option value="কঠিন">কঠিন</option></select></div>' +
+    '<div><label class="fl">ভাষা</label><select id="aiLang"><option>বাংলা</option><option>English</option></select></div></div>' +
+    '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' +
+    '<button class="btn sm" id="aiSaveBtn">কী সেভ</button>' +
+    '<button class="btn gold sm" id="aiGoBtn">প্রশ্ন তৈরি করুন</button></div>' +
+    '<div id="aiMsg" class="hint" style="margin-top:8px"></div>' +
+    '<div id="aiOut"></div>';
+  host.appendChild(card);
+
+  const sub = card.querySelector('#aiSub');
+  if (typeof subjectOptions === 'function') subjectOptions(sub);
+
+  card.querySelector('#aiSaveBtn').onclick = () => {
+    aiSave({ provider: card.querySelector('#aiProv').value, key: card.querySelector('#aiKey').value.trim(),
+      model: card.querySelector('#aiModel').value.trim() });
+    showToast('AI সেটিংস সেভ হয়েছে', 'success');
+  };
+  card.querySelector('#aiGoBtn').onclick = async () => {
+    const msg = card.querySelector('#aiMsg'), out = card.querySelector('#aiOut');
+    const opts = {
+      cls: card.querySelector('#aiCls').value, subject: sub.value,
+      topic: card.querySelector('#aiTopic').value.trim(),
+      count: card.querySelector('#aiCount').value, diff: card.querySelector('#aiDiff').value,
+      lang: card.querySelector('#aiLang').value
+    };
+    if (!opts.topic) { msg.textContent = 'টপিক লিখুন'; return; }
+    aiSave({ provider: card.querySelector('#aiProv').value, key: card.querySelector('#aiKey').value.trim(),
+      model: card.querySelector('#aiModel').value.trim() });
+    msg.textContent = 'তৈরি হচ্ছে… (ইন্টারনেট দরকার)';
+    out.innerHTML = '';
+    try {
+      const list = await aiGenerate(opts);
+      msg.innerHTML = '<b>' + list.length + '</b>টি প্রশ্ন তৈরি হয়েছে';
+      out.innerHTML = '<div class="list" style="margin-top:10px">' + list.map((q, i) =>
+        '<div class="qrow"><div class="qt">' + (i + 1) + '. ' + esc(q.text) + '</div><div class="qo">' +
+        q.options.map((o, k) => '<span style="' + (k === q.answer ? 'color:var(--ok);font-weight:700' : '') + '">(' +
+          'ABCD'[k] + ') ' + esc(o) + '</span>').join(' &nbsp; ') + '</div></div>').join('') + '</div>' +
+        '<button class="btn sm" id="aiAddBtn" style="margin-top:10px">ব্যাংকে যোগ করুন</button>';
+      out.querySelector('#aiAddBtn').onclick = () => {
+        let n = 0;
+        list.forEach(q => {
+          if (S.questions.some(x => x.text === q.text)) return;
+          S.questions.push({ id: 'Q' + Date.now().toString(36) + n, text: q.text, options: q.options,
+            answer: q.answer, subject: opts.subject, chapter: opts.topic, difficulty: 'medium', source: 'ai' });
+          n++;
+        });
+        save(); renderBank(); renderHome();
+        showToast(n + 'টি প্রশ্ন যোগ হয়েছে', 'success');
+      };
+    } catch (e) {
+      msg.innerHTML = '<span style="color:var(--bad)">ব্যর্থ: ' + esc(e.message) + '</span>';
+    }
+  };
+}
+
+
+/* ================= PHASE 1 — DRAFT/PUBLISH + SOFT DELETE ================= */
+function isDraft(x) { return x && x.status === 'draft'; }
+function isDeleted(x) { return !!(x && x.deleted); }
+function liveNotes() { return S.notes.filter(n => !isDeleted(n) && !(isDraft(n) && !isAdmin())); }
+function liveQuestions() { return S.questions.filter(q => !isDeleted(q) && !(isDraft(q) && !isAdmin())); }
+function liveNotices() { return S.notices.filter(n => !isDeleted(n) && !(isDraft(n) && !isAdmin())); }
+
+function setStatus(kind, id, status) {
+  const arr = kind === 'note' ? S.notes : kind === 'question' ? S.questions : S.notices;
+  const it = arr.find(x => x.id === id);
+  if (!it) return;
+  it.status = status;
+  it.verified_at = status === 'published' ? new Date().toISOString() : null;
+  save();
+  if (kind === 'note') renderStudy();
+  if (kind === 'question') renderBank();
+  if (kind === 'notice') { renderNotices(); renderTicker(); }
+  showToast(status === 'published' ? 'প্রকাশিত হয়েছে — শিক্ষার্থীরা দেখবে' : 'খসড়ায় ফেরানো হয়েছে', 'success');
+}
+
+function softDelete(kind, id) {
+  const arr = kind === 'note' ? S.notes : kind === 'question' ? S.questions : S.notices;
+  const i = arr.findIndex(x => x.id === id);
+  if (i < 0) return;
+  const it = arr[i];
+  it.deleted = true; it.deletedAt = new Date().toISOString();
+  if (!Array.isArray(S.trash)) S.trash = [];
+  S.trash.unshift({ kind, item: it, at: it.deletedAt });
+  save();
+  if (kind === 'note') renderStudy();
+  if (kind === 'question') renderBank();
+  if (kind === 'notice') { renderNotices(); renderTicker(); }
+  showToast('রিসাইকেল বিনে পাঠানো হয়েছে', 'info');
+}
+
+function restoreTrash(idx) {
+  if (!Array.isArray(S.trash)) return;
+  const t = S.trash[idx];
+  if (!t) return;
+  const arr = t.kind === 'note' ? S.notes : t.kind === 'question' ? S.questions : S.notices;
+  const it = arr.find(x => x.id === t.item.id);
+  if (it) { it.deleted = false; delete it.deletedAt; }
+  else arr.push(t.item);
+  S.trash.splice(idx, 1);
+  save(); renderTrash(); renderStudy(); renderBank(); renderNotices(); renderTicker();
+  showToast('ফিরিয়ে আনা হয়েছে', 'success');
+}
+
+function renderTrash() {
+  const box = document.getElementById('trashBox');
+  if (!box) return;
+  const list = Array.isArray(S.trash) ? S.trash : [];
+  box.innerHTML = '<h3>রিসাইকেল বিন (' + list.length + ')</h3>' + (list.length
+    ? '<div class="list">' + list.map((t, i) =>
+        '<div class="qrow"><div class="qt">' + esc((t.item.title || t.item.text || '—').slice(0, 70)) + '</div>' +
+        '<div class="qo">' + esc(t.kind) + ' · ' + new Date(t.at).toLocaleString('en-GB') + '</div>' +
+        '<div style="margin-top:6px"><button class="btn sm" data-restore="' + i + '">ফিরিয়ে আনুন</button></div></div>').join('') + '</div>'
+    : '<p class="hint">খালি।</p>');
+  box.querySelectorAll('[data-restore]').forEach(b => b.onclick = () => restoreTrash(+b.dataset.restore));
+}
+
+function phase1Panel() {
+  if (document.getElementById('trashBox')) return;
+  const host = document.getElementById('tab-admin');
+  if (!host) return;
+  const d = document.createElement('div');
+  d.className = 'card'; d.id = 'trashBox';
+  host.appendChild(d);
+  renderTrash();
+}
+
+/* status badge helper for lists */
+function statusBadge(x) {
+  if (isDeleted(x)) return '<span class="pill" style="background:rgba(248,113,113,.18);color:var(--bad)">মুছে ফেলা</span>';
+  if (isDraft(x)) return '<span class="pill" style="background:rgba(245,196,81,.18);color:var(--gold)">খসড়া</span>';
+  return '';
+}
+
+
+/* ---------- PHASE 1B: note versions + notice scheduling ---------- */
+function editNote(id) {
+  if (!needAdmin()) return;
+  const n = S.notes.find(x => x.id === id);
+  if (!n) return;
+  const t = prompt('নতুন শিরোনাম:', n.title);
+  if (t === null) return;
+  const b = prompt('নতুন লেখা:', n.body);
+  if (b === null) return;
+  if (!Array.isArray(n.history)) n.history = [];
+  n.history.unshift({ title: n.title, body: n.body, at: new Date().toISOString() });
+  if (n.history.length > 10) n.history.length = 10;      /* শেষ ১০টি ভার্সন */
+  n.title = t.trim() || n.title;
+  n.body = b.trim() || n.body;
+  n.updatedAt = new Date().toISOString();
+  save(); renderStudy();
+  showToast('সেভ হয়েছে — আগের কপি ভার্সনে রাখা হলো', 'success');
+}
+function noteVersions(id) {
+  const n = S.notes.find(x => x.id === id);
+  if (!n || !n.history || !n.history.length) { showToast('আগের কোনো ভার্সন নেই', 'warn'); return; }
+  let box = document.getElementById('verBox');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'verBox'; box.className = 'card';
+    const host = document.getElementById('tab-study') || document.body;
+    host.appendChild(box);
+  }
+  box.classList.remove('hide');
+  box.innerHTML = '<h3>ভার্সন হিসাব — ' + esc(n.title) + '</h3>' +
+    '<div class="list">' + n.history.map((h, i) =>
+      '<div class="qrow"><div class="qt">' + esc(h.title) + '</div>' +
+      '<div class="qo">' + new Date(h.at).toLocaleString('en-GB') + ' · ' + esc((h.body || '').slice(0, 60)) + '</div>' +
+      '<div style="margin-top:6px"><button class="btn sm" data-ver="' + i + '">এই ভার্সনে ফেরান</button></div></div>').join('') +
+    '</div>';
+  box.querySelectorAll('[data-ver]').forEach(b => b.onclick = () => {
+    const h = n.history[+b.dataset.ver];
+    if (!h) return;
+    n.history.unshift({ title: n.title, body: n.body, at: new Date().toISOString() });
+    n.title = h.title; n.body = h.body;
+    save(); renderStudy(); noteVersions(id);
+    showToast('আগের ভার্সনে ফেরানো হয়েছে', 'success');
+  });
+  box.scrollIntoView({ behavior: 'smooth' });
+}
+
+/* notice scheduling: start date + expiry already supported */
+function noticeLive(n) {
+  const today = new Date().toISOString().slice(0, 10);
+  if (n.start && n.start > today) return false;
+  if (n.expiry && n.expiry < today) return false;
+  return true;
+}
+
 /* ---- final boot ---- */
 try { const c = JSON.parse(localStorage.getItem('mdx_sbcfg') || 'null');
   if (c && c.url && c.key) { SB.url = c.url; SB.key = c.key; } } catch (e) {}
@@ -2780,7 +3061,9 @@ sbRestore();
 initAppShell();
 initV3();
 setTimeout(() => { if (sbOn()) { sbSync(); } if (typeof sbPanel === 'function') sbPanel();
-  if (typeof importPanel === 'function') importPanel(); }, 400);
+  if (typeof importPanel === 'function') importPanel();
+  if (typeof aiPanel === 'function') aiPanel();
+  if (typeof phase1Panel === 'function') phase1Panel(); }, 400);
 
 </script>
 </body>
