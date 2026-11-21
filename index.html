@@ -232,7 +232,8 @@ body.isadmin .admininline{display:inline-block!important}
     <button data-tab="ai" class="adminonly">🤖 AI স্টুডিও</button>
     <button data-tab="bank">📚 প্রশ্নব্যাংক</button>
     <button data-tab="quiz">✍️ কুইজ</button>
-    <button data-tab="result">📊 ফলাফল</button>
+    <button data-tab="result" class="adminonly">📊 ফলাফল</button>
+    <button data-tab="students" class="adminonly">👥 পরীক্ষার্থী</button>
     <button data-tab="library">📚 লাইব্রেরি</button>
     <button data-tab="notice">📢 নোটিশ</button>
     <button data-tab="admin" class="adminonly">🛠️ অ্যাডমিন</button>
@@ -501,6 +502,15 @@ body.isadmin .admininline{display:inline-block!important}
   </section>
 
   <!-- RESULT -->
+  <section id="tab-students" class="tab hide">
+    <div class="card">
+      <h3>পরীক্ষার্থীর তালিকা <span id="stuCount" class="pill"></span></h3>
+      <input id="stuSearch" placeholder="নাম / ফোন / স্কুল খুঁজুন">
+      <div class="list" id="stuList" style="margin-top:12px"></div>
+      <button class="btn sm ghost" id="stuCsv" style="margin-top:10px">CSV এক্সপোর্ট</button>
+    </div>
+  </section>
+
   <section id="tab-result" class="tab hide">
     <div class="card">
       <h3>সংরক্ষিত ফলাফল <span id="resCount" class="pill"></span></h3>
@@ -708,6 +718,8 @@ $$('#tabs button').forEach(b => b.onclick = () => {
   if (t) t.classList.remove('hide');
   if (b.dataset.tab === 'bank') renderBank();
   if (b.dataset.tab === 'result') renderResults();
+  if (b.dataset.tab === 'students' && typeof renderStudents === 'function') { renderStudents();
+    if (typeof mergeCloudResults === 'function') mergeCloudResults().then(n => { if (n) renderStudents(); }); }
   if (b.dataset.tab === 'home' && typeof renderHome === 'function') renderHome();
   if (b.dataset.tab === 'study' && typeof renderStudy === 'function') renderStudy();
   if (b.dataset.tab === 'practice' && typeof renderProgress === 'function') renderProgress();
@@ -1146,6 +1158,7 @@ function finishQuiz() {
   S.results.unshift({ name: LAST.name, cls: (Q && Q.cls) || '', phone: (Q && Q.phone) || '', school: (Q && Q.school) || '',
     ok, total: LAST.total, pct, grade, at: LAST.at });
   if (typeof touchStreak === 'function') touchStreak();
+  if (typeof attemptSave === 'function') attemptSave({ name: LAST.name, cls: (Q && Q.cls) || '', phone: (Q && Q.phone) || '', school: (Q && Q.school) || '', quizTitle: LAST.quizTitle, ok: LAST.ok, total: LAST.total, pct: LAST.pct, grade: LAST.grade, at: LAST.at });
   save();
   $('#quizRun').classList.add('hide'); $('#quizResult').classList.remove('hide');
   $('#rScore').textContent = bn(ok) + ' / ' + bn(Q.qs.length);
@@ -1225,18 +1238,40 @@ $('#rPrint').onclick = () => {
 
 /* ================= RESULTS ================= */
 function renderResults() {
-  $('#resCount').textContent = bn(S.results.length);
   const q = ($('#resSearch').value || '').toLowerCase();
-  const list = q ? S.results.filter(r => r.name.toLowerCase().includes(q)) : S.results;
-  $('#resList').innerHTML = list.length ? list.map(r => `<div class="qrow">
-    <div class="qt">${esc(r.name)} <span class="pill">${r.grade}</span></div>
-    <div class="qo">${bn(r.ok)}/${bn(r.total)} · ${bn(r.pct)}% · ${new Date(r.at).toLocaleString('en-GB')}</div>
-  </div>`).join('') : '<div class="qrow" style="text-align:center;color:var(--muted)">কোনো ফলাফল নেই</div>';
+  const all = S.results || [];
+  /* শিক্ষার্থী ধরে ধরে জমা করা: কতবার পরীক্ষা, সেরা নম্বর */
+  const map = new Map();
+  all.forEach(r => {
+    const key = (r.name || '') + '|' + (r.phone || '');
+    if (!map.has(key)) map.set(key, { name: r.name || '—', phone: r.phone || '—', cls: r.cls || '—',
+      school: r.school || '—', count: 0, best: 0, last: r.at, total: 0 });
+    const g = map.get(key);
+    g.count++;
+    g.best = Math.max(g.best, r.pct || 0);
+    if (new Date(r.at) > new Date(g.last)) { g.last = r.at; g.total = r.total; }
+    if (!g.cls || g.cls === '—') g.cls = r.cls || '—';
+    if (!g.school || g.school === '—') g.school = r.school || '—';
+  });
+  let list = Array.from(map.values());
+  if (q) list = list.filter(x => (x.name + x.phone + x.school).toLowerCase().includes(q));
+  list.sort((a, b) => b.best - a.best);
+
+  $('#resCount').textContent = bn(list.length) + ' জন · ' + bn(all.length) + ' পরীক্ষা';
+  $('#resList').innerHTML = list.length ? list.map(x => `<div class="qrow">
+      <div class="qt">${esc(x.name)} <span class="pill">${bn(x.best)}%</span></div>
+      <div class="qo">
+        শ্রেণি: ${esc(x.cls)} · ফোন: ${esc(x.phone)}<br>
+        স্কুল: ${esc(x.school)}<br>
+        পরীক্ষা দিয়েছে: <b>${bn(x.count)}</b> বার · সেরা: <b>${bn(x.best)}%</b><br>
+        শেষ পরীক্ষা: ${new Date(x.last).toLocaleString('en-GB')}
+      </div></div>`).join('')
+    : '<div class="qrow" style="text-align:center;color:var(--muted)">কোনো ফলাফল নেই</div>';
 }
 $('#resSearch').oninput = renderResults;
 $('#resCsv').onclick = () => {
-  const rows = [['Name', 'Score', 'Total', 'Percent', 'Grade', 'Date']].concat(
-    S.results.map(r => [r.name, r.ok, r.total, r.pct, r.grade, r.at]));
+  const rows = [['Name', 'Class', 'Phone', 'School', 'Score', 'Total', 'Percent', 'Grade', 'Date']].concat(
+    S.results.map(r => [r.name, r.cls || '', r.phone || '', r.school || '', r.ok, r.total, r.pct, r.grade, r.at]));
   const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\n');
   const b = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(b);
@@ -1684,11 +1719,11 @@ function showInstallHelp() {
 function showMoreSheet() {
   let items = [
     ['suggestion', '💡 সাজেশন'], ['mistake', '📕 ভুল খাতা'], ['planner', '🗓️ প্ল্যানার'],
-    ['library', '📚 লাইব্রেরি'], ['bank', '📚 প্রশ্নব্যাংক'], ['result', '📊 ফলাফল']
+    ['library', '📚 লাইব্রেরি'], ['bank', '📚 প্রশ্নব্যাংক']
   ];
   if (typeof isAdmin === 'function' && isAdmin()) {
-    items = items.concat([['import', '📄 PDF ইমপোর্ট'], ['ai', '🤖 AI স্টুডিও'],
-      ['admin', '🛠️ অ্যাডমিন'], ['settings', '⚙️ সেটিংস']]);
+    items = items.concat([['result', '📊 ফলাফল'], ['import', '📄 PDF ইমপোর্ট'],
+      ['ai', '🤖 AI স্টুডিও'], ['admin', '🛠️ অ্যাডমিন'], ['settings', '⚙️ সেটিংস']]);
   }
   const sheet = document.createElement('div');
   sheet.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:120;display:flex;align-items:flex-end';
@@ -2167,7 +2202,7 @@ function applyAccess() {
   /* if a student is sitting on an admin-only tab, move them home */
   if (!isAdmin()) {
     const active = document.querySelector('.tab:not(.hide)');
-    const blocked = ['tab-import', 'tab-ai', 'tab-admin', 'tab-settings'];
+    const blocked = ['tab-import', 'tab-ai', 'tab-admin', 'tab-settings', 'tab-result'];
     if (active && blocked.includes(active.id)) switchTab('home');
   }
 }
@@ -3676,6 +3711,91 @@ async function handleVerifyHash() {
       '<div style="color:var(--bad);font-weight:800">✗ যাচাই হয়নি</div>' +
       '<div style="font-size:.86em;margin-top:6px">' + esc(r.msg) + '</div></div>';
   return true;
+}
+
+
+/* ---------- পরীক্ষার্থীর তালিকা (আলাদা ট্যাব) ---------- */
+function renderStudents() {
+  const box = document.getElementById('stuList');
+  if (!box) return;
+  const q = ((document.getElementById('stuSearch') || {}).value || '').toLowerCase();
+  const all = S.results || [];
+  const map = new Map();
+  all.forEach(r => {
+    const key = (r.name || '') + '|' + (r.phone || '');
+    if (!map.has(key)) map.set(key, { name: r.name || '—', phone: r.phone || '—', cls: r.cls || '—',
+      school: r.school || '—', count: 0, best: 0, last: r.at, bestTotal: 0 });
+    const g = map.get(key);
+    g.count++;
+    if ((r.pct || 0) > g.best) { g.best = r.pct || 0; g.bestTotal = r.total; }
+    if (new Date(r.at) > new Date(g.last)) g.last = r.at;
+    if (!g.cls || g.cls === '—') g.cls = r.cls || '—';
+    if (!g.school || g.school === '—') g.school = r.school || '—';
+  });
+  let list = Array.from(map.values());
+  if (q) list = list.filter(x => (x.name + x.phone + x.school).toLowerCase().includes(q));
+  list.sort((a, b) => b.best - a.best);
+  const cnt = document.getElementById('stuCount');
+  if (cnt) cnt.textContent = bn(list.length) + ' জন · ' + bn(all.length) + ' পরীক্ষা';
+  box.innerHTML = list.length ? list.map(x => `<div class="qrow">
+      <div class="qt">${esc(x.name)} <span class="pill">${bn(x.best)}%</span></div>
+      <div class="qo">শ্রেণি: ${esc(x.cls)} · ফোন: ${esc(x.phone)}<br>
+        স্কুল: ${esc(x.school)}<br>
+        পরীক্ষা: <b>${bn(x.count)}</b> বার · সেরা: <b>${bn(x.best)}%</b><br>
+        শেষ: ${new Date(x.last).toLocaleString('en-GB')}</div></div>`).join('')
+    : '<div class="qrow" style="text-align:center;color:var(--muted)">এখনো কেউ পরীক্ষা দেয়নি</div>';
+  const sc = document.getElementById('stuSearch');
+  if (sc && !sc._bound) { sc._bound = true; sc.oninput = renderStudents; }
+  const csv = document.getElementById('stuCsv');
+  if (csv && !csv._bound) {
+    csv._bound = true;
+    csv.onclick = () => {
+      const rows = [['Name', 'Class', 'Phone', 'School', 'Attempts', 'BestPercent', 'LastExam']]
+        .concat(list.map(x => [x.name, x.cls, x.phone, x.school, x.count, x.best, x.last]));
+      const csvText = rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\n');
+      const b = new Blob([csvText], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(b);
+      a.download = 'medhatrix-students.csv'; a.click();
+    };
+  }
+}
+
+
+/* ================= CENTRAL ATTEMPTS (Supabase) ================= */
+async function attemptSave(rec) {
+  if (typeof sbOn !== 'function' || !sbOn()) return;
+  try {
+    await fetch(SB.url + '/rest/v1/attempts', {
+      method: 'POST',
+      headers: { 'apikey': SB.key, 'Authorization': 'Bearer ' + (SB.token || SB.key),
+                 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ name: rec.name || 'শিক্ষার্থী', class: rec.cls || '',
+        phone: rec.phone || '', school: rec.school || '', quiz: rec.quizTitle || '',
+        score: rec.ok, total: rec.total, pct: rec.pct, grade: rec.grade,
+        taken_at: rec.at })
+    });
+  } catch (e) { /* নেটওয়ার্ক না থাকলে চুপচাপ বাদ */ }
+}
+async function attemptsLoad() {
+  if (typeof sbOn !== 'function' || !sbOn() || !SB.token) return [];
+  try {
+    const r = await sbFetch('/rest/v1/attempts?select=*&order=taken_at.desc&limit=2000');
+    return Array.isArray(r) ? r.map(x => ({ id: x.id, name: x.name, cls: x.class,
+      phone: x.phone, school: x.school, quizTitle: x.quiz, ok: x.score, total: x.total,
+      pct: Number(x.pct) || 0, grade: x.grade, at: x.taken_at, remote: true })) : [];
+  } catch (e) { return []; }
+}
+async function mergeCloudResults() {
+  const rows = await attemptsLoad();
+  if (!rows.length) return 0;
+  const seen = new Set((S.results || []).map(r => (r.name || '') + '|' + (r.at || '') + '|' + (r.pct || 0)));
+  let added = 0;
+  rows.forEach(r => {
+    const k = (r.name || '') + '|' + (r.at || '') + '|' + (r.pct || 0);
+    if (!seen.has(k)) { S.results.push(r); seen.add(k); added++; }
+  });
+  if (added) save();
+  return added;
 }
 
 /* ---- final boot ---- */
