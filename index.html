@@ -1103,19 +1103,24 @@ function renderQ() {
     box.appendChild(d);
   });
   $('#qPrev').disabled = Q.idx === 0;
-  $('#qNext').textContent = Q.idx === Q.qs.length - 1 ? 'শেষ' : '→';
+  $('#qNext').textContent = Q.idx === Q.qs.length - 1 ? 'জমা দিন ✓' : '→';
+  $('#qNext').classList.toggle('gold', Q.idx === Q.qs.length - 1);
   $('#qPalGrid').innerHTML = Q.qs.map((_, i) =>
     `<div class="cell ${Q.ans[i] !== null ? 'ans' : ''} ${i === Q.idx ? 'cur' : ''}" data-go="${i}">${bn(i + 1)}</div>`).join('');
   $$('#qPalGrid [data-go]').forEach(c => c.onclick = () => { Q.idx = +c.dataset.go; renderQ(); });
 }
 $('#qPrev').onclick = () => { if (Q.idx > 0) { Q.idx--; renderQ(); } };
-$('#qNext').onclick = () => { if (Q.idx < Q.qs.length - 1) { Q.idx++; renderQ(); } };
-$('#qPalBtn').onclick = () => $('#qPalCard').classList.toggle('hide');
-$('#qSubmit').onclick = () => {
+function askSubmit() {
   const un = Q.ans.filter(a => a === null).length;
-  if (un && !confirm(bn(un) + 'টি প্রশ্ন বাকি আছে। তবুও জমা দেবেন?')) return;
+  if (un && !confirm(bn(un) + 'টি প্রশ্নের উত্তর দেননি। তবুও জমা দেবেন?')) return;
   finishQuiz();
+}
+$('#qNext').onclick = () => {
+  if (Q.idx < Q.qs.length - 1) { Q.idx++; renderQ(); }
+  else askSubmit();
 };
+$('#qPalBtn').onclick = () => $('#qPalCard').classList.toggle('hide');
+$('#qSubmit').onclick = () => askSubmit();
 let LAST = null;
 function finishQuiz() {
   clearInterval(timer);
@@ -3590,6 +3595,18 @@ function schedulePanel() {
   host.appendChild(card);
   const sub = card.querySelector('#schSub');
   if (typeof subjectOptions === 'function') subjectOptions(sub);
+  /* ব্যাংকে থাকা বিষয়গুলোও যোগ করুন (সাধারণ জ্ঞান, ইসলামিক ইত্যাদি) */
+  try {
+    const have = new Set(Array.from(sub.options).map(o => o.value));
+    const extra = Array.from(new Set(S.questions.map(q => q.subject).filter(Boolean)))
+      .filter(x => !have.has(x));
+    if (extra.length) {
+      sub.insertAdjacentHTML('afterbegin',
+        '<option value="">— সব বিষয় —</option>' +
+        extra.map(x => '<option value="' + esc(x) + '">' + esc(x) + ' (' +
+          S.questions.filter(q => q.subject === x).length + ')</option>').join(''));
+    }
+  } catch (e) {}
   card.querySelector('#schAdd').onclick = addSchedule;
   renderSchedules();
 }
