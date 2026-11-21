@@ -386,7 +386,7 @@ body.isadmin .admininline{display:inline-block!important}
       <div class="row3">
         <div><label class="fl">বিষয় / টপিক</label><input id="aiTopic" placeholder="যেমন: ইসলামের ইতিহাস"></div>
         <div><label class="fl">কতটি প্রশ্ন</label><select id="aiCount">
-          <option>5</option><option>10</option><option>15</option><option>20</option></select></div>
+          <option>1</option><option>2</option><option>3</option><option>5</option><option>10</option></select></div>
         <div><label class="fl">কঠিন্য</label><select id="aiDiff">
           <option value="সহজ">সহজ</option><option value="মধ্যম" selected>মধ্যম</option>
           <option value="কঠিন">কঠিন</option></select></div>
@@ -443,8 +443,16 @@ body.isadmin .admininline{display:inline-block!important}
         <div><label class="fl">কতটি প্রশ্ন</label><input id="qCount" type="number" value="20" min="1"></div>
         <div><label class="fl">সময় (মিনিট)</label><input id="qTime" type="number" value="20" min="1"></div>
       </div>
-      <label class="fl">পরীক্ষার্থীর নাম</label>
-      <input id="qName" placeholder="নাম">
+      <div class="row"><div><label class="fl">শিক্ষার্থীর নাম</label>
+        <input id="qName" placeholder="নাম"></div>
+        <div><label class="fl">শ্রেণি</label><select id="qCls">
+          <option>V</option><option>VI</option><option>VII</option><option>VIII</option>
+          <option>IX</option><option selected>X</option><option>XI</option><option>XII</option>
+        </select></div></div>
+      <div class="row"><div><label class="fl">ফোন নম্বর</label>
+        <input id="qPhone" placeholder="মোবাইল নম্বর" inputmode="numeric"></div>
+        <div><label class="fl">স্কুল</label>
+        <input id="qSchool" placeholder="বিদ্যালয়ের নাম"></div></div>
       <button class="btn" id="qStart" style="margin-top:12px;width:100%">শুরু করুন</button>
     </div>
 
@@ -1063,7 +1071,9 @@ $('#qStart').onclick = () => {
   let use = n;
   if (avail.length < n) { use = avail.length; toast('ব্যাংকে মাত্র ' + bn(use) + 'টি প্রশ্ন আছে — সবগুলোই দেওয়া হলো', 'warn'); }
   const pool = avail.slice().sort(() => Math.random() - 0.5).slice(0, use);
-  Q = { name, qs: pool, ans: new Array(pool.length).fill(null), idx: 0, left: mins * 60, total: mins * 60 };
+  Q = { name, cls: ($('#qCls') ? $('#qCls').value : ''), phone: ($('#qPhone') ? $('#qPhone').value.trim() : ''),
+        school: ($('#qSchool') ? $('#qSchool').value.trim() : ''),
+        qs: pool, ans: new Array(pool.length).fill(null), idx: 0, left: mins * 60, total: mins * 60 };
   $('#quizSetup').classList.add('hide'); $('#quizRun').classList.remove('hide');
   $('#quizResult').classList.add('hide');
   $('#qWho').textContent = name;
@@ -1127,7 +1137,8 @@ function finishQuiz() {
       else S.mistakes.push({ id: q.id, count: 1, at: new Date().toISOString() });
     }
   });
-  S.results.unshift({ name: LAST.name, ok, total: LAST.total, pct, grade, at: LAST.at });
+  S.results.unshift({ name: LAST.name, cls: (Q && Q.cls) || '', phone: (Q && Q.phone) || '', school: (Q && Q.school) || '',
+    ok, total: LAST.total, pct, grade, at: LAST.at });
   if (typeof touchStreak === 'function') touchStreak();
   save();
   $('#quizRun').classList.add('hide'); $('#quizResult').classList.remove('hide');
@@ -2844,16 +2855,8 @@ async function aiGenerate(opts) {
     'a হলো সঠিক অপশনের ইনডেক্স (0-3)। কোনো মার্কডাউন বা ব্যাখ্যা নয়।';
 
   if (c.provider === 'gemini') {
-    const model = c.model || 'gemini-2.0-flash';
-    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' +
-      encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(c.key), {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-    });
-    const d = await res.json();
-    if (!res.ok) throw new Error((d.error && d.error.message) || ('HTTP ' + res.status));
-    const txt = (d.candidates && d.candidates[0] && d.candidates[0].content &&
-      d.candidates[0].content.parts.map(x => x.text).join('')) || '';
+    const model = c.model || 'gemini-flash-latest';
+    const txt = await geminiCall(c.key, prompt, c.model);
     return parseAIJson(txt);
   }
   /* OpenAI-compatible */
@@ -2890,12 +2893,14 @@ function aiPanel() {
     '<div class="row"><div><label class="fl">প্রদানকারী</label><select id="aiProv">' +
     '<option value="gemini"' + (c.provider === 'gemini' ? ' selected' : '') + '>Google Gemini (ফ্রি)</option>' +
     '<option value="openai"' + (c.provider === 'openai' ? ' selected' : '') + '>OpenAI-সামঞ্জস্যপূর্ণ</option></select></div>' +
-    '<div><label class="fl">মডেল</label><input id="aiModel" value="' + (c.model || 'gemini-2.0-flash') + '"></div></div>' +
+    '<div><label class="fl">মডেল</label><input id="aiModel" value="' + (c.model || 'gemini-flash-latest') + '"></div></div>' +
     '<label class="fl">API কী</label><input id="aiKey" type="password" value="' + (c.key || '') + '" placeholder="AIza...">' +
     '<div class="row"><div><label class="fl">শ্রেণি</label><select id="aiCls">' + clsOpts + '</select></div>' +
     '<div><label class="fl">বিষয়</label><select id="aiSub"></select></div></div>' +
     '<label class="fl">টপিক</label><input id="aiTopic" placeholder="যেমন: নিউটনের সূত্র">' +
-    '<div class="row3"><div><label class="fl">সংখ্যা</label><select id="aiCount"><option>5</option><option selected>10</option><option>15</option><option>20</option></select></div>' +
+    '<div class="row3"><div><label class="fl">সংখ্যা</label><select id="aiCount">' +
+      '<option>1</option><option>2</option><option>3</option><option selected>5</option><option>10</option><option>15</option><option>20</option>' +
+      '</select></div>' +
     '<div><label class="fl">কঠিনতা</label><select id="aiDiff"><option value="সহজ">সহজ</option><option value="মধ্যম" selected>মধ্যম</option><option value="কঠিন">কঠিন</option></select></div>' +
     '<div><label class="fl">ভাষা</label><select id="aiLang"><option>বাংলা</option><option>English</option></select></div></div>' +
     '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' +
@@ -2909,7 +2914,7 @@ function aiPanel() {
   if (typeof subjectOptions === 'function') subjectOptions(sub);
 
   card.querySelector('#aiSaveBtn').onclick = () => {
-    aiSave({ provider: card.querySelector('#aiProv').value, key: card.querySelector('#aiKey').value.trim(),
+    aiSave({ provider: card.querySelector('#aiProv').value, key: card.querySelector('#aiKey').value.trim().replace(/\s+/g,''),
       model: card.querySelector('#aiModel').value.trim() });
     showToast('AI সেটিংস সেভ হয়েছে', 'success');
   };
@@ -2922,7 +2927,7 @@ function aiPanel() {
       lang: card.querySelector('#aiLang').value
     };
     if (!opts.topic) { msg.textContent = 'টপিক লিখুন'; return; }
-    aiSave({ provider: card.querySelector('#aiProv').value, key: card.querySelector('#aiKey').value.trim(),
+    aiSave({ provider: card.querySelector('#aiProv').value, key: card.querySelector('#aiKey').value.trim().replace(/\s+/g,''),
       model: card.querySelector('#aiModel').value.trim() });
     msg.textContent = 'তৈরি হচ্ছে… (ইন্টারনেট দরকার)';
     out.innerHTML = '';
@@ -3307,18 +3312,10 @@ function aiTutorOpen() {
     add('me', q);
     const wait = add('ai', 'ভাবছি…');
     try {
-      const model = c.model || 'gemini-2.0-flash';
+      const model = c.model || 'gemini-flash-latest';
       const prompt = 'তুমি একজন বাংলা মাধ্যম স্কুল শিক্ষক। শিক্ষার্থীর প্রশ্নের উত্তর সহজ বাংলায়, ধাপে ধাপে দাও। ' +
         'শ্রেণি: ' + (S.profile && S.profile.cls) + ', বিষয় প্রসঙ্গ থাকলে মানো। প্রশ্ন: ' + q;
-      const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' +
-        encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(c.key), {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-      });
-      const d = await res.json();
-      if (!res.ok) throw new Error((d.error && d.error.message) || ('HTTP ' + res.status));
-      const txt = (d.candidates && d.candidates[0] && d.candidates[0].content &&
-        d.candidates[0].content.parts.map(x => x.text).join('')) || 'উত্তর পাওয়া যায়নি';
+      const txt = await geminiCall(c.key, prompt, c.model);
       wait.innerHTML = '<div style="font-size:.72em;color:var(--muted);margin-bottom:3px">AI</div>' +
         esc(txt).replace(/\n/g, '<br>');
     } catch (e) {
@@ -3342,6 +3339,118 @@ function addTutorButton() {
   box.querySelector('#tutorBtn').onclick = aiTutorOpen;
 }
 
+
+/* ---------- Gemini call with model fallback + 503 retry ---------- */
+async function geminiCall(key, prompt, preferModel) {
+  const models = [preferModel || 'gemini-flash-latest', 'gemini-3.8-flash', 'gemini-flash-latest']
+    .filter((m, i, a) => m && a.indexOf(m) === i);
+  let lastErr = '';
+  for (let attempt = 0; attempt < 2; attempt++) {
+    for (const m of models) {
+      try {
+        const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' +
+          encodeURIComponent(m) + ':generateContent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+        });
+        const d = await res.json();
+        if (res.ok && d.candidates) {
+          return (d.candidates[0].content.parts || []).map(x => x.text || '').join('');
+        }
+        lastErr = (d.error && (d.error.status + ': ' + d.error.message)) || ('HTTP ' + res.status);
+        if (res.status === 503 || res.status === 429) continue;   /* busy → next model */
+        if (res.status === 400 || res.status === 403) throw new Error('কী ভুল বা অনুমতি নেই — ' + lastErr);
+      } catch (e) {
+        if (String(e.message).indexOf('কী ভুল') === 0) throw e;
+        lastErr = e.message;
+      }
+    }
+    if (attempt === 0) await new Promise(r => setTimeout(r, 1500));
+  }
+  throw new Error(lastErr || 'উত্তর আসেনি');
+}
+
+/* ---- extra question bank (added to the built-in set) ---- */
+const SEED_Q2 = [
+ ['বাংলাদেশের রাজধানীর নাম কী?',['ঢাকা','চট্টগ্রাম','খুলনা','রাজশাহী'],0,'সাধারণ জ্ঞান'],
+ ['নেপালের রাজধানী কোনটি?',['কাঠমান্ডু','থিম্পু','ঢাকা','কলম্বো'],0,'সাধারণ জ্ঞান'],
+ ['ভুটানের রাজধানী কোনটি?',['থিম্পু','কাঠমান্ডু','মালে','ঢাকা'],0,'সাধারণ জ্ঞান'],
+ ['শ্রীলঙ্কার রাজধানী কোনটি?',['কলম্বো','মালে','ঢাকা','কাঠমান্ডু'],0,'সাধারণ জ্ঞান'],
+ ['সবচেয়ে বড় মহাসাগর কোনটি?',['প্রশান্ত মহাসাগর','আটলান্টিক','ভারত মহাসাগর','উত্তর মহাসাগর'],0,'সাধারণ জ্ঞান'],
+ ['সবচেয়ে বড় মরুভূমি কোনটি?',['সাহারা','থর','গোবি','কালাহারি'],0,'সাধারণ জ্ঞান'],
+ ['ভারতের সবচেয়ে দীর্ঘ নদী কোনটি?',['গঙ্গা','যমুনা','ব্রহ্মপুত্র','গোদাবরী'],0,'সাধারণ জ্ঞান'],
+ ['সবচেয়ে উঁচু পর্বতশৃঙ্গ কোনটি?',['এভারেস্ট','কে-টু','কাঞ্চনজঙ্ঘা','মাউন্ট ফুজি'],0,'সাধারণ জ্ঞান'],
+ ['ভারতের জাতীয় নদী কোনটি?',['গঙ্গা','যমুনা','কাবেরী','নর্মদা'],0,'সাধারণ জ্ঞান'],
+ ['সূর্য থেকে আলো আসতে কত সময় লাগে?',['প্রায় ৮ মিনিট','১ মিনিট','৩০ মিনিট','১ ঘণ্টা'],0,'বিজ্ঞান'],
+ ['পৃথিবীর একমাত্র উপগ্রহ কোনটি?',['চাঁদ','মঙ্গল','শুক্র','বৃহস্পতি'],0,'বিজ্ঞান'],
+ ['মানবদেহে রক্তের গ্রুপ কত প্রকার?',['৪','২','৩','৬'],0,'বিজ্ঞান'],
+ ['হৃদপিণ্ডে কতটি প্রকোষ্ঠ থাকে?',['৪','২','৩','৫'],0,'বিজ্ঞান'],
+ ['উদ্ভিদ কোন গ্যাস শোষণ করে?',['কার্বন ডাই-অক্সাইড','অক্সিজেন','নাইট্রোজেন','হাইড্রোজেন'],0,'বিজ্ঞান'],
+ ['কোনটি নবায়নযোগ্য শক্তি?',['সৌরশক্তি','কয়লা','পেট্রোল','ডিজেল'],0,'বিজ্ঞান'],
+ ['আলোর গতিবেগ কত?',['৩ × ১০⁸ মিটার/সেকেন্ড','৩ × ১০⁶','৩ × ১০⁵','৩ × ১০¹⁰'],0,'বিজ্ঞান'],
+ ['কোনটি ধাতু নয়?',['অক্সিজেন','লোহা','তামা','সোনা'],0,'বিজ্ঞান'],
+ ['সাধারণ উষ্ণতায় কোনটি তরল?',['পারদ','লোহা','সোনা','কয়লা'],0,'বিজ্ঞান'],
+ ['কম্পিউটারের স্থায়ী স্মৃতি কোনটি?',['হার্ডডিস্ক','RAM','ক্যাশ','রেজিস্টার'],0,'কম্পিউটার'],
+ ['ইন্টারনেটে তথ্য আদান-প্রদানে কোনটি ব্যবহৃত হয়?',['HTTP','PDF','JPEG','MP3'],0,'কম্পিউটার'],
+ ['1 কিলোবাইট = কত বাইট?',['১০২৪','১০০০','১০০','৫১২'],0,'কম্পিউটার'],
+ ['কোনটি ইনপুট ডিভাইস?',['কীবোর্ড','মনিটর','প্রিন্টার','স্পিকার'],0,'কম্পিউটার'],
+ ['কোনটি অপারেটিং সিস্টেম?',['Windows','MS Word','Excel','Chrome'],0,'কম্পিউটার'],
+ ['১ ডজন = কত?',['১২','১০','২০','৬'],0,'গণিত'],
+ ['ত্রিভুজের তিন কোণের সমষ্টি কত?',['১৮০°','৯০°','৩৬০°','২৭০°'],0,'গণিত'],
+ ['বৃত্তের পরিধি ও ব্যাসের অনুপাত কত?',['π','২π','π/২','১'],0,'গণিত'],
+ ['২-এর বর্গমূল প্রায় কত?',['১.৪১৪','১.৭৩২','২.২৩৬','৩.১৪'],0,'গণিত'],
+ ['শতকরা ২৫% = কত ভগ্নাংশ?',['১/৪','১/২','১/৫','১/৩'],0,'গণিত'],
+ ['সমকোণ কত ডিগ্রি?',['৯০°','১৮০°','৪৫°','৬০°'],0,'গণিত'],
+ ['৫! (ফ্যাক্টোরিয়াল) = কত?',['১২০','২৪','৬০','৭২০'],0,'গণিত'],
+ ['কোন সংখ্যাটি মৌলিক?',['১৭','১৫','২১','৯'],0,'গণিত'],
+ ['ইংরেজি বর্ণমালায় কতটি বর্ণ আছে?',['২৬','২৪','২৮','৩০'],0,'English'],
+ ['"Beautiful" শব্দের সমার্থক কোনটি?',['Pretty','Ugly','Angry','Slow'],0,'English'],
+ ['"Run" এর past form কোনটি?',['Ran','Runned','Running','Runs'],0,'English'],
+ ['কোনটি সঠিক বানান?',['Necessary','Neccessary','Necesary','Neccesary'],0,'English'],
+ ['"Child" এর plural কোনটি?',['Children','Childs','Childes','Child'],0,'English'],
+ ['বাংলা বর্ণমালায় স্বরবর্ণ কতটি?',['১১','১০','১২','৯'],0,'Bengali'],
+ ['বাংলা বর্ণমালায় ব্যঞ্জনবর্ণ কতটি?',['৩৯','৩৫','৪০','৩৮'],0,'Bengali'],
+ ['"অগ্নি" শব্দের সমার্থক কোনটি?',['আগুন','জল','বাতাস','মাটি'],0,'Bengali'],
+ ['"সূর্য" শব্দের সমার্থক নয় কোনটি?',['চাঁদ','রবি','ভানু','দিবাকর'],0,'Bengali'],
+ ['রবীন্দ্রনাথ ঠাকুর কোন সালে নোবেল পান?',['১৯১৩','১৯১৫','১৯২০','১৯১০'],0,'সাধারণ জ্ঞান'],
+ ['"গীতাঞ্জলি" কার লেখা?',['রবীন্দ্রনাথ ঠাকুর','কাজী নজরুল ইসলাম','শরৎচন্দ্র','বঙ্কিমচন্দ্র'],0,'Bengali'],
+ ['জাতীয় সংগীত "জনগণমন" কার লেখা?',['রবীন্দ্রনাথ ঠাকুর','কাজী নজরুল','দ্বিজেন্দ্রলাল','অতুলপ্রসাদ'],0,'Bengali'],
+ ['ভারতের সংবিধান কবে কার্যকর হয়?',['২৬ জানুয়ারি ১৯৫০','১৫ আগস্ট ১৯৪৭','২৬ নভেম্বর ১৯৪৯','২ অক্টোবর ১৯৫০'],0,'সাধারণ জ্ঞান'],
+ ['ভারতের প্রথম রাষ্ট্রপতি কে?',['ড. রাজেন্দ্র প্রসাদ','জওহরলাল নেহরু','সর্বপল্লী রাধাকৃষ্ণণ','এ পি জে আব্দুল কালাম'],0,'সাধারণ জ্ঞান'],
+ ['ভারতের বর্তমান মুদ্রার নাম কী?',['টাকা','রুপি','ডলার','ইউরো'],0,'সাধারণ জ্ঞান'],
+ ['কোন রাজ্যের রাজধানী কলকাতা?',['পশ্চিমবঙ্গ','বিহার','ওড়িশা','আসাম'],0,'সাধারণ জ্ঞান'],
+ ['পশ্চিমবঙ্গের রাজ্য পশু কোনটি?',['রয়্যাল বেঙ্গল টাইগার','হাতি','হরিণ','গণ্ডার'],0,'সাধারণ জ্ঞান'],
+ ['পশ্চিমবঙ্গের রাজ্য পাখি কোনটি?',['সাদা বক','ময়ূর','কোকিল','পায়রা'],0,'সাধারণ জ্ঞান'],
+ ['দুর্গাপূজা কোন মাসে সাধারণত হয়?',['আশ্বিন','বৈশাখ','শ্রাবণ','কার্তিক'],0,'সাধারণ জ্ঞান'],
+ ['কুরআনে মোট কতটি পারা আছে?',['৩০','২০','৪০','২৫'],0,'ইসলামিক'],
+ ['নবী মুহাম্মদ (সা.) কোথায় জন্মগ্রহণ করেন?',['মক্কা','মদিনা','তায়েফ','জেদ্দা'],0,'ইসলামিক'],
+ ['হজ্জ কোন মাসে পালিত হয়?',['জিলহজ','রমজান','শাওয়াল','রজব'],0,'ইসলামিক'],
+ ['কিবলা কোন দিকে মুখ করে নামাজ পড়া হয়?',['কাবা','জেরুজালেম','উত্তর','পূর্ব'],0,'ইসলামিক'],
+ ['কুরআনের প্রথম সূরার নাম কী?',['আল-ফাতিহা','আল-বাকারা','আন-নাস','ইখলাস'],0,'ইসলামিক'],
+ ['জুমার নামাজে কত রাকাত ফরজ?',['২','৩','৪','১'],0,'ইসলামিক'],
+ ['সবচেয়ে ছোট সূরা কোনটি?',['আল-কাউসার','আল-ইখলাস','আন-নাস','আল-আসর'],0,'ইসলামিক'],
+ ['যাকাত কাদের দেওয়া হয়?',['অভাবী ও অভাবগ্রস্তকে','ধনীদের','সরকারকে','ব্যবসায়ীদের'],0,'ইসলামিক'],
+ ['কোনটি ওহি লাভকারী ফেরেশতার নাম?',['জিব্রাইল (আ.)','মিকাইল','ইসরাফিল','আজরাইল'],0,'ইসলামিক'],
+ ['মহানবী (সা.)-এর মায়ের নাম কী?',['আমিনা','খাদিজা','ফাতিমা','হালিমা'],0,'ইসলামিক'],
+ ['বদর যুদ্ধ কত সালে হয়?',['২ হিজরি','১০ হিজরি','৫ হিজরি','১ হিজরি'],0,'ইসলামিক'],
+ ['কোনটি ইবাদত নয়?',['ব্যবসা','নামাজ','রোজা','হজ্জ'],0,'ইসলামিক'],
+ ['পবিত্র কুরআন কোন ভাষায় নাজিল হয়?',['আরবি','ফারসি','উর্দু','হিব্রু'],0,'ইসলামিক']
+];
+function seedBank2() {
+  if (!Array.isArray(S.questions)) return;
+  const have = new Set(S.questions.map(q => q.text));
+  let added = 0;
+  SEED_Q2.forEach(q => {
+    if (have.has(q[0])) return;
+    S.questions.push({ id: 'Q2' + added + Date.now().toString(36), text: q[0], options: q[1],
+      answer: q[2], subject: q[3], chapter: '', difficulty: 'easy', status: 'published', source: 'seed' });
+    added++;
+  });
+  if (added) { save(); if (typeof renderBank === 'function') renderBank(); }
+  return added;
+}
+
 /* ---- final boot ---- */
 try { const c = JSON.parse(localStorage.getItem('mdx_sbcfg') || 'null');
   if (c && c.url && c.key) { SB.url = c.url; SB.key = c.key; } } catch (e) {}
@@ -3353,7 +3462,8 @@ setTimeout(() => { if (sbOn()) { sbSync(); } if (typeof sbPanel === 'function') 
   if (typeof aiPanel === 'function') aiPanel();
   if (typeof phase1Panel === 'function') phase1Panel();
   if (typeof homeExtras === 'function') homeExtras();
-  if (typeof addTutorButton === 'function') addTutorButton(); }, 400);
+  if (typeof addTutorButton === 'function') addTutorButton();
+  if (typeof seedBank2 === 'function') { const n = seedBank2(); if (n) showToast(n + 'টি নতুন প্রশ্ন যোগ হয়েছে', 'success'); } }, 400);
 
 </script>
 </body>
