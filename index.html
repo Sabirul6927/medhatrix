@@ -5007,8 +5007,8 @@ async function sbSync(showMsg) {
   if (!sbOn()) return false;
   try {
     const [notes, questions, notices] = await Promise.all([
-      sbFetch('/rest/v1/notes?select=*&order=created_at.desc&limit=500'),
-      sbFetch('/rest/v1/questions?select=*&order=created_at.desc&limit=1000'),
+      sbFetch('/rest/v1/notes?select=*&order=created_at.desc&limit=50000'),
+      sbFetch('/rest/v1/questions?select=*&order=created_at.desc&limit=5000'),
       sbFetch('/rest/v1/notices?select=*&order=created_at.desc&limit=200')
     ]);
     if (Array.isArray(notes) && notes.length) S.notes = notes.map(rowToNote);
@@ -6166,7 +6166,7 @@ async function flushPendingAttempts() {
 async function attemptsLoad() {
   if (typeof sbOn !== 'function' || !sbOn() || !SB.token) return [];
   try {
-    const r = await sbFetch('/rest/v1/attempts?select=*&order=taken_at.desc&limit=2000');
+    const r = await sbFetch('/rest/v1/attempts?select=*&order=taken_at.desc&limit=20000');
     return Array.isArray(r) ? r.map(x => ({ id: x.id, name: x.name, cls: x.class,
       phone: x.phone, school: x.school, quizTitle: x.quiz, ok: x.score, total: x.total,
       pct: Number(x.pct) || 0, grade: x.grade, at: x.taken_at, remote: true })) : [];
@@ -6384,9 +6384,9 @@ async function loadDirectory() {
   if (typeof sbOn !== 'function' || !sbOn()) return false;
   try {
     const [p, a, c] = await Promise.all([
-      sbFetch('/rest/v1/student_profiles?select=*&order=last_seen.desc&limit=500'),
-      sbFetch('/rest/v1/attempts?select=*&order=taken_at.desc&limit=2000'),
-      sbFetch('/rest/v1/certificates?select=*&order=issued_at.desc&limit=1000')
+      sbFetch('/rest/v1/student_profiles?select=*&order=last_seen.desc&limit=50000'),
+      sbFetch('/rest/v1/attempts?select=*&order=taken_at.desc&limit=20000'),
+      sbFetch('/rest/v1/certificates?select=*&order=issued_at.desc&limit=5000')
     ]);
     DIR.profiles = Array.isArray(p) ? p : [];
     DIR.attempts = Array.isArray(a) ? a : [];
