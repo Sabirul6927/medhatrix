@@ -235,7 +235,7 @@ body.isadmin .admininline{display:inline-block!important}
     <button data-tab="result" class="adminonly">📊 ফলাফল</button>
     <button data-tab="students" class="adminonly">👥 পরীক্ষার্থী</button>
     <button data-tab="library">📚 লাইব্রেরি</button>
-    <button data-tab="notice">📢 নোটিশ</button>
+    <button data-tab="notice">💬 মতামত</button>
     <button data-tab="admin" class="adminonly">🛠️ অ্যাডমিন</button>
     <button data-tab="settings" class="adminonly">⚙️ সেটিংস</button>
   </div>
@@ -445,6 +445,10 @@ body.isadmin .admininline{display:inline-block!important}
         <div><label class="fl">কতটি প্রশ্ন</label><input id="qCount" type="number" value="20" min="1"></div>
         <div><label class="fl">সময় (মিনিট)</label><input id="qTime" type="number" value="20" min="1"></div>
       </div>
+      <label class="fl">কঠিনতা</label><select id="qDiff">
+        <option value="mixed" selected>মিশ্র (৪০% সহজ · ৪০% মাঝারি · ২০% কঠিন)</option>
+        <option value="easy">সহজ</option><option value="medium">মাঝারি</option><option value="hard">কঠিন</option>
+      </select>
       <div class="row"><div><label class="fl">শিক্ষার্থীর নাম</label>
         <input id="qName" placeholder="নাম"></div>
         <div><label class="fl">শ্রেণি</label><select id="qCls">
@@ -603,6 +607,10 @@ body.isadmin .admininline{display:inline-block!important}
       <p class="hint">Editor শুধু নোটিশ ও প্রশ্ন সম্পাদনা করতে পারবে।</p>
     </div>
     <div class="card"><h3>রিপোর্ট কার্ড</h3>
+      <label class="fl">কঠিনতা</label><select id="qDiff">
+        <option value="mixed" selected>মিশ্র (৪০% সহজ · ৪০% মাঝারি · ২০% কঠিন)</option>
+        <option value="easy">সহজ</option><option value="medium">মাঝারি</option><option value="hard">কঠিন</option>
+      </select>
       <div class="row"><div><label class="fl">শিক্ষার্থীর নাম</label><input id="rcName"></div>
         <div><label class="fl">শ্রেণি</label><input id="rcCls"></div></div>
       <button class="btn" id="rcPrint" style="margin-top:10px">রিপোর্ট কার্ড প্রিন্ট</button>
@@ -3387,7 +3395,10 @@ $('#qStart').onclick = () => {
   if (!avail.length) { toast('ব্যাংকে কোনো প্রশ্ন নেই — আগে প্রশ্ন যোগ করুন'); return; }
   let use = n;
   if (avail.length < n) { use = avail.length; toast('ব্যাংকে মাত্র ' + bn(use) + 'টি প্রশ্ন আছে — সবগুলোই দেওয়া হলো', 'warn'); }
-  const pool = avail.slice().sort(() => Math.random() - 0.5).slice(0, use);
+  const dmode = (document.getElementById('qDiff') || {}).value || 'mixed';
+  const pool = (typeof pickByDifficulty === 'function')
+    ? pickByDifficulty(avail.slice(), use, dmode)
+    : avail.slice().sort(() => Math.random() - 0.5).slice(0, use);
   Q = { title: (document.getElementById('qTitle') ? document.getElementById('qTitle').value : '') || 'অনলাইন কুইজ', name, cls: ($('#qCls') ? $('#qCls').value : ''), phone: ($('#qPhone') ? $('#qPhone').value.trim() : ''),
         school: ($('#qSchool') ? $('#qSchool').value.trim() : ''),
         qs: pool, ans: new Array(pool.length).fill(null), idx: 0, left: mins * 60, total: mins * 60 };
@@ -6490,6 +6501,124 @@ function certPanel() {
   loadDirectory().then(() => renderCerts());
 }
 
+/* ================= DIFFICULTY ENGINE + FEEDBACK ================= */
+function pickByDifficulty(pool, n, mode) {
+  const by = d => pool.filter(q => (q.difficulty || 'medium') === d);
+  const easy = by('easy'), med = by('medium'), hard = by('hard');
+  let out = [];
+  if (mode === 'easy') out = easy.slice();
+  else if (mode === 'medium') out = med.slice();
+  else if (mode === 'hard') out = hard.slice();
+  else {                                   /* mixed: 40/40/20 */
+    const nE = Math.round(n * 0.4), nM = Math.round(n * 0.4), nH = Math.max(0, n - nE - nM);
+    out = easy.slice(0, nE).concat(med.slice(0, nM), hard.slice(0, nH));
+  }
+  if (out.length < n) {                    /* ঘাটতি থাকলে বাকি ব্যাংক থেকে পূরণ */
+    const have = new Set(out.map(q => q.id));
+    pool.forEach(q => { if (out.length < n && !have.has(q.id)) { out.push(q); have.add(q.id); } });
+  }
+  return out.sort(() => Math.random() - 0.5).slice(0, n);
+}
+
+function feedbackRef() {
+  return 'MDX-FB-' + new Date().getFullYear() + '-' +
+    Math.random().toString(36).slice(2, 8).toUpperCase();
+}
+async function feedbackSave(rec) {
+  if (typeof sbOn !== 'function' || !sbOn()) return false;
+  try {
+    const res = await fetch(SB.url + '/rest/v1/feedback', {
+      method: 'POST',
+      headers: { 'apikey': SB.key, 'Authorization': 'Bearer ' + SB.key,
+                 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify(rec)
+    });
+    return res.ok;
+  } catch (e) { return false; }
+}
+async function feedbackList() {
+  try {
+    const r = await sbFetch('/rest/v1/feedback?select=*&order=created_at.desc&limit=300');
+    return Array.isArray(r) ? r : [];
+  } catch (e) { return []; }
+}
+
+function feedbackPanel() {
+  const host = document.getElementById('tab-notice');
+  if (!host || document.getElementById('fbCard')) return;
+  const card = document.createElement('div');
+  card.className = 'card'; card.id = 'fbCard';
+  card.innerHTML = '<h3>মতামত ও অভিযোগ</h3>' +
+    '<p class="hint">প্রশ্ন ভুল, সাইটের সমস্যা বা নতুন কিছু চাইলে জানান। একটি রেফারেন্স নম্বর পাবেন।</p>' +
+    '<label class="fl">ধরন</label><select id="fbType">' +
+      '<option value="suggestion">পরামর্শ</option><option value="complaint">অভিযোগ</option>' +
+      '<option value="technical">টেকনিক্যাল সমস্যা</option><option value="question">প্রশ্ন/উত্তর ভুল</option>' +
+      '<option value="certificate">সার্টিফিকেট সমস্যা</option><option value="feature">নতুন সুবিধা</option>' +
+    '</select>' +
+    '<label class="fl">নাম (ঐচ্ছিক)</label><input id="fbName" placeholder="আপনার নাম">' +
+    '<label class="fl">ফোন (ঐচ্ছিক)</label><input id="fbPhone" placeholder="মোবাইল নম্বর">' +
+    '<label class="fl">বিস্তারিত</label><textarea id="fbBody" rows="4" placeholder="কী সমস্যা বা পরামর্শ, লিখুন"></textarea>' +
+    '<button class="btn" id="fbSend" style="margin-top:10px">পাঠান</button>' +
+    '<div id="fbRef" style="margin-top:12px"></div>';
+  host.insertBefore(card, host.firstChild);
+  card.querySelector('#fbSend').onclick = async () => {
+    const body = card.querySelector('#fbBody').value.trim();
+    if (body.length < 5) { showToast('অন্তত ৫ অক্ষর লিখুন', 'warn'); return; }
+    const rec = { ref: feedbackRef(), type: card.querySelector('#fbType').value,
+      name: card.querySelector('#fbName').value.trim(), phone: card.querySelector('#fbPhone').value.trim(),
+      body, status: 'new' };
+    const ok = await feedbackSave(rec);
+    card.querySelector('#fbRef').innerHTML =
+      '<div class="qrow"><div class="qt">রেফারেন্স নম্বর</div>' +
+      '<div style="font-family:monospace;font-size:1.1em;color:var(--accent)">' + rec.ref + '</div>' +
+      '<div class="qo">' + (ok ? 'জমা হয়েছে ✓' : 'ডিভাইসে রাখা হয়েছে — ইন্টারনেট এলে যাবে') + '</div></div>';
+    card.querySelector('#fbBody').value = '';
+    showToast('ধন্যবাদ! মতামত জমা হয়েছে', 'success');
+  };
+}
+
+function feedbackAdminPanel() {
+  const host = document.getElementById('tab-admin');
+  if (!host || document.getElementById('fbAdminCard')) return;
+  const card = document.createElement('div');
+  card.className = 'card'; card.id = 'fbAdminCard';
+  card.innerHTML = '<h3>মতামত ব্যবস্থাপনা</h3><div class="list" id="fbList">লোড হচ্ছে…</div>';
+  host.appendChild(card);
+  feedbackList().then(list => {
+    const box = card.querySelector('#fbList');
+    if (!list.length) { box.innerHTML = '<p class="hint">এখনো কোনো মতামত আসেনি</p>'; return; }
+    box.innerHTML = list.map(f => '<div class="qrow">' +
+      '<div class="qt">' + esc(f.type) + ' <span class="pill">' + esc(f.status) + '</span></div>' +
+      '<div class="qo">' + esc(f.ref) + (f.name ? ' · ' + esc(f.name) : '') + (f.phone ? ' · ' + esc(f.phone) : '') + '<br>' +
+      esc((f.body || '').slice(0, 160)) + '<br>' + new Date(f.created_at).toLocaleString('en-GB') + '</div></div>').join('');
+  });
+}
+
+
+/* ---------- অ্যাডমিন সারসংক্ষেপ ---------- */
+function renderDash() {
+  const host = document.getElementById('tab-admin');
+  if (!host || document.getElementById('dashCard')) return;
+  const card = document.createElement('div');
+  card.className = 'card'; card.id = 'dashCard';
+  const students = new Set((DIR.attempts || []).map(r => r.phone || r.name)).size;
+  const attempts = (DIR.attempts || []).length;
+  const certs = (DIR.certs || []).length;
+  const avg = attempts ? Math.round(DIR.attempts.reduce((a, r) => a + (Number(r.pct) || 0), 0) / attempts) : 0;
+  card.innerHTML = '<h3>সারসংক্ষেপ</h3>' +
+    '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">' +
+      '<div class="qrow" style="text-align:center"><b style="font-size:1.5em">' + bn(students) + '</b><div class="qo">শিক্ষার্থী</div></div>' +
+      '<div class="qrow" style="text-align:center"><b style="font-size:1.5em">' + bn(attempts) + '</b><div class="qo">পরীক্ষা</div></div>' +
+      '<div class="qrow" style="text-align:center"><b style="font-size:1.5em">' + bn(certs) + '</b><div class="qo">সার্টিফিকেট</div></div>' +
+      '<div class="qrow" style="text-align:center"><b style="font-size:1.5em">' + bn(avg) + '%</b><div class="qo">গড় নম্বর</div></div>' +
+    '</div>' +
+    '<button class="btn sm ghost" id="dashRefresh" style="margin-top:10px;width:100%">রিফ্রেশ</button>';
+  host.insertBefore(card, host.firstChild);
+  card.querySelector('#dashRefresh').onclick = async () => {
+    await loadDirectory(); card.remove(); renderDash(); showToast('আপডেট হয়েছে', 'success');
+  };
+}
+
 /* ---- final boot ---- */
 try { const c = JSON.parse(localStorage.getItem('mdx_sbcfg') || 'null');
   if (c && c.url && c.key) { SB.url = c.url; SB.key = c.key; } } catch (e) {}
@@ -6505,6 +6634,9 @@ setTimeout(() => { if (sbOn()) { sbSync(); } if (typeof sbPanel === 'function') 
   if (typeof schedulePanel === 'function') schedulePanel();
   if (typeof dirPanel === 'function') dirPanel();
   if (typeof certPanel === 'function') certPanel();
+  if (typeof feedbackPanel === 'function') feedbackPanel();
+  if (typeof feedbackAdminPanel === 'function') feedbackAdminPanel();
+  if (typeof renderDash === 'function') renderDash();
   if (typeof handlePlayHash === 'function') handlePlayHash();
   if (typeof handleVerifyHash === 'function') handleVerifyHash();
   if (typeof flushPendingAttempts === 'function') flushPendingAttempts();
