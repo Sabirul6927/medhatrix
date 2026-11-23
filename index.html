@@ -223,19 +223,20 @@ body.isadmin .admininline{display:inline-block!important}
 
   <div class="tabs" id="tabs">
     <button data-tab="home" class="on">🏠 হোম</button>
-    <button data-tab="study">📖 পড়াশোনা</button>
+    <button data-tab="study" class="adminonly">📖 পড়াশোনা</button>
     <button data-tab="practice">🎯 অনুশীলন</button>
-    <button data-tab="suggestion">💡 সাজেশন</button>
-    <button data-tab="mistake">📕 ভুল খাতা</button>
-    <button data-tab="planner">🗓️ প্ল্যানার</button>
+    <button data-tab="suggestion" class="adminonly">💡 সাজেশন</button>
+    <button data-tab="mistake" class="adminonly">📕 ভুল খাতা</button>
+    <button data-tab="planner" class="adminonly">🗓️ প্ল্যানার</button>
     <button data-tab="import" class="adminonly">📄 PDF ইমপোর্ট</button>
     <button data-tab="ai" class="adminonly">🤖 AI স্টুডিও</button>
-    <button data-tab="bank">📚 প্রশ্নব্যাংক</button>
+    <button data-tab="bank" class="adminonly">📚 প্রশ্নব্যাংক</button>
     <button data-tab="quiz">✍️ কুইজ</button>
     <button data-tab="result" class="adminonly">📊 ফলাফল</button>
     <button data-tab="students" class="adminonly">👥 পরীক্ষার্থী</button>
-    <button data-tab="library">📚 লাইব্রেরি</button>
+    <button data-tab="library" class="adminonly">📚 লাইব্রেরি</button>
     <button data-tab="notice">💬 মতামত</button>
+    <button data-tab="profile">👤 আমার প্রোফাইল</button>
     <button data-tab="admin" class="adminonly">🛠️ অ্যাডমিন</button>
     <button data-tab="settings" class="adminonly">⚙️ সেটিংস</button>
   </div>
@@ -514,6 +515,13 @@ body.isadmin .admininline{display:inline-block!important}
       <input id="stuSearch" placeholder="নাম / ফোন / স্কুল খুঁজুন">
       <div class="list" id="stuList" style="margin-top:12px"></div>
       <button class="btn sm ghost" id="stuCsv" style="margin-top:10px">CSV এক্সপোর্ট</button>
+    </div>
+  </section>
+
+  <section id="tab-profile" class="tab hide">
+    <div class="card" id="profCard">
+      <h3>আমার প্রোফাইল</h3>
+      <div id="profBody"><p class="hint">এখনো কোনো তথ্য নেই — একটা কুইজ দিয়ে শুরু করুন।</p></div>
     </div>
   </section>
 
@@ -3028,6 +3036,7 @@ $$('#tabs button').forEach(b => b.onclick = () => {
   if (t) t.classList.remove('hide');
   if (b.dataset.tab === 'bank') renderBank();
   if (b.dataset.tab === 'result') renderResults();
+  if (b.dataset.tab === 'profile' && typeof renderProfile === 'function') renderProfile();
   if (b.dataset.tab === 'students' && typeof renderDirectory === 'function') { renderDirectory();
     loadDirectory().then(() => renderDirectory()); }
   if (b.dataset.tab === 'students' && typeof renderStudents === 'function') { renderStudents();
@@ -3387,10 +3396,22 @@ function startQuizWith(list, name, mins, mode) {
   renderQ(); startTimer();
   window.scrollTo(0, 0);
 }
-$('#qStart').onclick = () => {
+$('#qStart').onclick = async () => {
   const n = Math.max(1, +$('#qCount').value || 20);
   const mins = Math.max(1, +$('#qTime').value || 20);
   const name = $('#qName').value.trim() || 'পরীক্ষার্থী';
+  const phoneVal = ($('#qPhone') ? $('#qPhone').value.trim() : '');
+  let reg = null;
+  if (typeof registerStudent === 'function') {
+    reg = await registerStudent(name, phoneVal);
+    if (reg && reg.ok === false) { showToast(reg.msg, 'warn'); return; }
+    if (reg && reg.code) {
+      S.student = { code: reg.code, id: reg.id || null, name: name, phone: phoneVal, at: new Date().toISOString() };
+      save();
+      if (reg.code.indexOf('MDX-O') !== 0 && reg.code.indexOf('MDX-P') !== 0)
+        await showStudentCode(reg);
+    }
+  }
   const avail = (typeof liveQuestions === 'function' ? liveQuestions() : S.questions);
   if (!avail.length) { toast('ব্যাংকে কোনো প্রশ্ন নেই — আগে প্রশ্ন যোগ করুন'); return; }
   let use = n;
@@ -3399,7 +3420,7 @@ $('#qStart').onclick = () => {
   const pool = (typeof pickByDifficulty === 'function')
     ? pickByDifficulty(avail.slice(), use, dmode)
     : avail.slice().sort(() => Math.random() - 0.5).slice(0, use);
-  Q = { title: (document.getElementById('qTitle') ? document.getElementById('qTitle').value : '') || 'অনলাইন কুইজ', name, cls: ($('#qCls') ? $('#qCls').value : ''), phone: ($('#qPhone') ? $('#qPhone').value.trim() : ''),
+  Q = { studentId: (reg && reg.id) || null, studentCode: (reg && reg.code) || '', title: (document.getElementById('qTitle') ? document.getElementById('qTitle').value : '') || 'অনলাইন কুইজ', name, cls: ($('#qCls') ? $('#qCls').value : ''), phone: ($('#qPhone') ? $('#qPhone').value.trim() : ''),
         school: ($('#qSchool') ? $('#qSchool').value.trim() : ''),
         qs: pool, ans: new Array(pool.length).fill(null), idx: 0, left: mins * 60, total: mins * 60 };
   $('#quizSetup').classList.add('hide'); $('#quizRun').classList.remove('hide');
@@ -6102,7 +6123,7 @@ async function attemptSave(rec) {
         method: 'POST',
         headers: { 'apikey': SB.key, 'Authorization': 'Bearer ' + SB.key,
                    'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-        body: JSON.stringify(row)
+        body: JSON.stringify(Object.assign({}, row, { student_id: (Q && Q.studentId) || null }))
       });
       if (res.ok) return true;
       const err = await res.text();
@@ -6126,7 +6147,7 @@ async function flushPendingAttempts() {
         method: 'POST',
         headers: { 'apikey': SB.key, 'Authorization': 'Bearer ' + SB.key,
                    'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-        body: JSON.stringify(row)
+        body: JSON.stringify(Object.assign({}, row, { student_id: (Q && Q.studentId) || null }))
       });
       if (res.ok) sent++; else left.push(row);
     } catch (e) { left.push(row); }
@@ -6617,6 +6638,83 @@ function renderDash() {
   card.querySelector('#dashRefresh').onclick = async () => {
     await loadDirectory(); card.remove(); renderDash(); showToast('আপডেট হয়েছে', 'success');
   };
+}
+
+
+/* ---------- ZERO-OTP: স্বয়ংক্রিয় রেজিস্ট্রেশন ---------- */
+async function registerStudent(name, phone) {
+  const clean = (phone || '').replace(/[^0-9]/g, '');
+  if ((name || '').trim().length < 2) return { ok: false, msg: 'পুরো নাম লিখুন' };
+  if (clean.length < 6) return { ok: false, msg: 'সঠিক মোবাইল নম্বর দিন' };
+  if (typeof sbOn !== 'function' || !sbOn())
+    return { ok: true, code: 'MDX-OFFLINE', id: null, offline: true };
+  try {
+    const res = await fetch(SB.url + '/rest/v1/rpc/register_student', {
+      method: 'POST',
+      headers: { 'apikey': SB.key, 'Authorization': 'Bearer ' + SB.key,
+                 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_name: name.trim(), p_phone: clean })
+    });
+    if (!res.ok) return { ok: true, code: 'MDX-PENDING', id: null, offline: true };
+    const d = await res.json();
+    return { ok: true, code: d.student_code, id: d.student_id,
+             isNew: d.is_new, shared: d.shared_phone };
+  } catch (e) {
+    return { ok: true, code: 'MDX-PENDING', id: null, offline: true };
+  }
+}
+function showStudentCode(r) {
+  let m = document.getElementById('codeModal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'codeModal';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:199;display:flex;align-items:center;justify-content:center;padding:16px';
+    document.body.appendChild(m);
+  }
+  m.innerHTML = '<div class="card" style="max-width:420px;width:100%;margin:0;text-align:center">' +
+    '<h3 style="margin:0 0 8px">' + (r.isNew ? 'আপনার স্টুডেন্ট আইডি তৈরি হয়েছে' : 'আপনার স্টুডেন্ট আইডি') + '</h3>' +
+    '<div style="font-family:monospace;font-size:1.35em;color:var(--accent);font-weight:800;margin:10px 0">' + esc(r.code) + '</div>' +
+    '<p class="hint">এই আইডিটা সংরক্ষণ করুন। পরে একই নাম ও নম্বর দিলে আপনার আগের সব ফলাফল ফিরে পাবেন।</p>' +
+    (r.shared ? '<p class="hint" style="color:var(--warn)">এই নম্বরটি অন্য নামেও ব্যবহৃত হয়েছে — আলাদা প্রোফাইল তৈরি হয়েছে।</p>' : '') +
+    '<button class="btn" id="codeOk" style="width:100%">বুঝেছি, শুরু করুন</button></div>';
+  return new Promise(res => {
+    m.querySelector('#codeOk').onclick = () => { m.remove(); res(); };
+  });
+}
+
+
+/* ---------- শিক্ষার্থীর প্রোফাইল ---------- */
+function renderProfile() {
+  const box = document.getElementById('profBody');
+  if (!box) return;
+  const st = S.student || {};
+  const mine = (S.results || []).filter(r =>
+    st.code ? (r.studentCode === st.code) :
+    (st.phone ? r.phone === st.phone : true));
+  const n = mine.length;
+  const avg = n ? Math.round(mine.reduce((a, r) => a + (Number(r.pct) || 0), 0) / n) : 0;
+  const best = n ? Math.max(...mine.map(r => Number(r.pct) || 0)) : 0;
+  const certs = (S.certs || []).filter(c => st.name && c.name === st.name).length;
+
+  box.innerHTML =
+    '<div class="qrow" style="text-align:center">' +
+      '<div class="qo">স্টুডেন্ট আইডি</div>' +
+      '<div style="font-family:monospace;font-size:1.2em;color:var(--accent);font-weight:800">' +
+        (st.code ? esc(st.code) : 'কুইজ দিলে তৈরি হবে') + '</div>' +
+      '<div class="qo" style="margin-top:6px">' + esc(st.name || '—') + ' · ' + esc(st.phone || '—') + '</div>' +
+    '</div>' +
+    '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:10px">' +
+      '<div class="qrow" style="text-align:center"><b style="font-size:1.4em">' + bn(n) + '</b><div class="qo">পরীক্ষা</div></div>' +
+      '<div class="qrow" style="text-align:center"><b style="font-size:1.4em">' + bn(avg) + '%</b><div class="qo">গড় নম্বর</div></div>' +
+      '<div class="qrow" style="text-align:center"><b style="font-size:1.4em">' + bn(best) + '%</b><div class="qo">সেরা</div></div>' +
+      '<div class="qrow" style="text-align:center"><b style="font-size:1.4em">' + bn(certs) + '</b><div class="qo">সার্টিফিকেট</div></div>' +
+    '</div>' +
+    (n ? '<h3 style="margin-top:14px">আমার ফলাফল</h3><div class="list">' +
+      mine.slice(0, 20).map(r => '<div class="qrow">' +
+        '<div class="qt">' + esc(r.quizTitle || 'কুইজ') + ' <span class="pill">' + bn(r.pct) + '%</span></div>' +
+        '<div class="qo">' + bn(r.ok) + '/' + bn(r.total) + ' · গ্রেড ' + esc(r.grade || '—') + ' · ' +
+        new Date(r.at).toLocaleString('en-GB') + '</div></div>').join('') + '</div>'
+      : '<p class="hint" style="margin-top:12px">এখনো কোনো পরীক্ষা দেননি।</p>');
 }
 
 /* ---- final boot ---- */
