@@ -3037,6 +3037,7 @@ $$('#tabs button').forEach(b => b.onclick = () => {
   if (b.dataset.tab === 'bank') renderBank();
   if (b.dataset.tab === 'result') renderResults();
   if (b.dataset.tab === 'profile' && typeof renderProfile === 'function') renderProfile();
+  if (b.dataset.tab === 'practice' && typeof renderPracticeSubjects === 'function') renderPracticeSubjects();
   if (b.dataset.tab === 'students' && typeof renderDirectory === 'function') { renderDirectory();
     loadDirectory().then(() => renderDirectory()); }
   if (b.dataset.tab === 'students' && typeof renderStudents === 'function') { renderStudents();
@@ -6732,6 +6733,64 @@ function renderProfile() {
       : '<p class="hint" style="margin-top:12px">এখনো কোনো পরীক্ষা দেননি।</p>');
 }
 
+
+/* ---------- ফেজ ২: বিষয়ভিত্তিক অনুশীলন ও অগ্রগতি ---------- */
+function subjectStats() {
+  const map = {};
+  (S.results || []).forEach(r => {
+    if (!Array.isArray(r.answers)) return;
+    r.answers.forEach(a => {
+      const k = a.subject || 'সাধারণ';
+      if (!map[k]) map[k] = { total: 0, ok: 0 };
+      map[k].total++; if (a.ok) map[k].ok++;
+    });
+  });
+  return map;
+}
+function levelOf(pct, total) {
+  if (!total) return { key: 'none', bn: 'শুরু হয়নি', color: 'var(--muted)' };
+  if (pct < 40) return { key: 'started', bn: 'চেষ্টা করেছে', color: 'var(--warn)' };
+  if (pct < 70) return { key: 'improving', bn: 'উন্নতি হচ্ছে', color: 'var(--accent)' };
+  if (pct < 90) return { key: 'good', bn: 'ভালো', color: 'var(--ok)' };
+  return { key: 'mastered', bn: 'দক্ষ', color: 'var(--ok)' };
+}
+function renderPracticeSubjects() {
+  const box = document.getElementById('prSubj');
+  if (!box) return;
+  const stats = subjectStats();
+  const subs = Array.from(new Set((S.questions || []).map(q => q.subject).filter(Boolean))).sort();
+  box.innerHTML = subs.map(sub => {
+    const st = stats[sub] || { total: 0, ok: 0 };
+    const pct = st.total ? Math.round(st.ok / st.total * 100) : 0;
+    const lv = levelOf(pct, st.total);
+    const count = (S.questions || []).filter(q => q.subject === sub).length;
+    return '<div class="qrow"><div class="qt">' + esc(sub) + ' <span class="pill">' + bn(count) + ' প্রশ্ন</span></div>' +
+      '<div class="qo">' + (st.total ? 'অনুশীলন: ' + bn(st.total) + ' · সঠিক ' + bn(pct) + '% · <span style="color:' + lv.color + '">' + lv.bn + '</span>'
+        : '<span style="color:var(--muted)">শুরু হয়নি</span>') + '</div>' +
+      '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">' +
+      '<button class="btn sm" data-prsub="' + esc(sub) + '" data-n="10">১০টি</button>' +
+      '<button class="btn sm ghost" data-prsub="' + esc(sub) + '" data-n="20">২০টি</button></div></div>';
+  }).join('');
+  box.querySelectorAll('[data-prsub]').forEach(b => b.onclick = () => {
+    const sub = b.dataset.prsub, n = +b.dataset.n;
+    const pool = (S.questions || []).filter(q => q.subject === sub);
+    if (!pool.length) { showToast('এই বিষয়ে প্রশ্ন নেই', 'warn'); return; }
+    const list = pool.slice().sort(() => Math.random() - 0.5).slice(0, Math.min(n, pool.length));
+    if (typeof startQuizWith === 'function') startQuizWith(list, (S.student && S.student.name) || 'শিক্ষার্থী', Math.max(3, Math.round(n * 0.7)), 'practice');
+  });
+}
+function practicePanel() {
+  const host = document.getElementById('tab-practice');
+  if (!host || document.getElementById('prCard')) return;
+  const card = document.createElement('div');
+  card.className = 'card'; card.id = 'prCard';
+  card.innerHTML = '<h3>বিষয়ভিত্তিক অনুশীলন</h3>' +
+    '<p class="hint">বিষয় বেছে নিন — কুইজের মতোই প্রশ্ন আসবে, কিন্তু ফলাফল অনুশীলন হিসেবে জমা হবে।</p>' +
+    '<div class="list" id="prSubj" style="margin-top:10px"></div>';
+  host.insertBefore(card, host.firstChild);
+  renderPracticeSubjects();
+}
+
 /* ---- final boot ---- */
 try { const c = JSON.parse(localStorage.getItem('mdx_sbcfg') || 'null');
   if (c && c.url && c.key) { SB.url = c.url; SB.key = c.key; } } catch (e) {}
@@ -6748,6 +6807,7 @@ setTimeout(() => { if (sbOn()) { sbSync(); } if (typeof sbPanel === 'function') 
   if (typeof dirPanel === 'function') dirPanel();
   if (typeof certPanel === 'function') certPanel();
   if (typeof feedbackPanel === 'function') feedbackPanel();
+  if (typeof practicePanel === 'function') practicePanel();
   if (typeof feedbackAdminPanel === 'function') feedbackAdminPanel();
   if (typeof renderDash === 'function') renderDash();
   if (typeof handlePlayHash === 'function') handlePlayHash();
