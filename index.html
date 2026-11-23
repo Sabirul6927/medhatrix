@@ -3494,7 +3494,7 @@ function finishQuiz() {
   S.results.unshift({ name: LAST.name, cls: (Q && Q.cls) || '', phone: (Q && Q.phone) || '', school: (Q && Q.school) || '',
     ok, total: LAST.total, pct, grade, at: LAST.at });
   if (typeof touchStreak === 'function') touchStreak();
-  if (typeof attemptSave === 'function') attemptSave({ name: LAST.name, cls: (Q && Q.cls) || '', phone: (Q && Q.phone) || '', school: (Q && Q.school) || '', quizTitle: LAST.quizTitle, ok: LAST.ok, total: LAST.total, pct: LAST.pct, grade: LAST.grade, at: LAST.at });
+  if (typeof attemptSave === 'function') attemptSave({ answers: (Q && Q.qs ? buildAnswers(Q.qs, Q.ans) : null), name: LAST.name, cls: (Q && Q.cls) || '', phone: (Q && Q.phone) || '', school: (Q && Q.school) || '', quizTitle: LAST.quizTitle, ok: LAST.ok, total: LAST.total, pct: LAST.pct, grade: LAST.grade, at: LAST.at });
   save();
   $('#quizRun').classList.add('hide'); $('#quizResult').classList.remove('hide');
   $('#rScore').textContent = bn(ok) + ' / ' + bn(Q.qs.length);
@@ -6111,12 +6111,19 @@ function renderStudents() {
   }
 }
 /* ================= CENTRAL ATTEMPTS (Supabase) ================= */
+function buildAnswers(qs, ans) {
+  return (qs || []).map((q, i) => ({
+    q: q.text, c: (ans[i] === undefined ? -1 : ans[i]), a: q.answer,
+    ok: ans[i] === q.answer, subject: q.subject || '', difficulty: q.difficulty || ''
+  }));
+}
 async function attemptSave(rec) {
   if (typeof sbOn !== 'function' || !sbOn()) return false;
   const row = { name: rec.name || 'শিক্ষার্থী', class: rec.cls || '',
     phone: rec.phone || '', school: rec.school || '', quiz: rec.quizTitle || '',
     score: rec.ok, total: rec.total, pct: rec.pct, grade: rec.grade,
-    taken_at: rec.at || new Date().toISOString() };
+    taken_at: rec.at || new Date().toISOString(),
+    answers: rec.answers || null };
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       const res = await fetch(SB.url + '/rest/v1/attempts', {
@@ -6655,11 +6662,19 @@ async function registerStudent(name, phone) {
                  'Content-Type': 'application/json' },
       body: JSON.stringify({ p_name: name.trim(), p_phone: clean })
     });
-    if (!res.ok) return { ok: true, code: 'MDX-PENDING', id: null, offline: true };
+    if (!res.ok) {
+      const t = await res.text();
+      SB.lastError = 'RPC ' + res.status + ' ' + t.slice(0, 160);
+      try { console.error('[register_student]', SB.lastError); } catch (e) {}
+      showToast('স্টুডেন্ট আইডি তৈরি হয়নি (' + res.status + ') — আবার চেষ্টা হবে', 'warn');
+      return { ok: true, code: 'MDX-PENDING', id: null, offline: true };
+    }
     const d = await res.json();
     return { ok: true, code: d.student_code, id: d.student_id,
              isNew: d.is_new, shared: d.shared_phone };
   } catch (e) {
+    try { console.error('[register_student] network', e.message); } catch (_) {}
+    showToast('ইন্টারনেট সমস্যা — আইডি পরে তৈরি হবে', 'warn');
     return { ok: true, code: 'MDX-PENDING', id: null, offline: true };
   }
 }
