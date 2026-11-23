@@ -6258,9 +6258,10 @@ async function buildCertCanvas() {
 
   g.fillStyle = '#777'; g.font = '500 20px "Segoe UI", system-ui, sans-serif';
   const CAT = certCategory(LAST.pct || 0);
+  const META = certMeta(CAT.key);
   g.fillText(CAT.en + '  ·  DIGITAL', W / 2, 300);
   g.fillStyle = NAVY; g.font = '700 64px "Segoe UI", system-ui, sans-serif';
-  g.fillText(CAT.bn, W / 2, 384);
+  g.fillText(META.title, W / 2, 384);
 
   g.fillStyle = MUTED; g.font = '400 24px "Segoe UI", system-ui, sans-serif';
   g.fillText('এই সার্টিফিকেট গর্বের সঙ্গে প্রদান করা হলো', W / 2, 434);
@@ -6272,12 +6273,13 @@ async function buildCertCanvas() {
   g.fillStyle = GOLD; g.fillRect(W / 2 - nw / 2 - 20, 540, nw + 40, 3);
 
   g.fillStyle = MUTED; g.font = '400 24px "Segoe UI", system-ui, sans-serif';
-  g.fillText(CAT.key === 'participation' ? 'যিনি সফলভাবে অংশগ্রহণ করেছেন' : 'যিনি সফলভাবে অংশগ্রহণ করে অর্জন করেছেন', W / 2, 596);
+  g.fillText(META.stmt.slice(0, 90), W / 2, 570);
+  g.fillText(META.bn.slice(0, 60), W / 2, 600);
   g.fillStyle = NAVY; g.font = '600 30px "Segoe UI", system-ui, sans-serif';
   g.fillText(cleanQuizName(d.quizName), W / 2, 640);
 
   g.fillStyle = NAVY; g.font = '700 46px "Segoe UI", system-ui, sans-serif';
-  g.fillText(LAST.ok + ' / ' + LAST.total + '   ·   ' + LAST.pct + '%   ·   ' + 'গ্রেড ' + LAST.grade, W / 2, 712);
+  g.fillText(LAST.ok + ' / ' + LAST.total + '   ·   ' + LAST.pct + '%   ·   ' + 'গ্রেড ' + (typeof certGrade === 'function' ? certGrade(LAST.pct) : LAST.grade), W / 2, 712);
 
   /* QR (বাঁ দিকে) */
   const qrSrc = certQR(d.code);
@@ -6744,6 +6746,20 @@ function renderProfile() {
       '<div class="qrow" style="text-align:center"><b style="font-size:1.4em">' + bn(best) + '%</b><div class="qo">সেরা</div></div>' +
       '<div class="qrow" style="text-align:center"><b style="font-size:1.4em">' + bn(certs) + '</b><div class="qo">সার্টিফিকেট</div></div>' +
     '</div>' +
+    (function(){
+      const sp = (typeof specialAwards === 'function') ? specialAwards(st.name) : [];
+      if (!sp.length) return '';
+      return '<h3 style="margin-top:14px">বিশেষ স্বীকৃতি</h3><div class="list">' +
+        sp.map(a => '<div class="qrow"><div class="qt">' + esc(a.bn) + ' <span class="pill">special</span></div>' +
+          '<div class="qo">' + esc(a.en) + '</div></div>').join('') + '</div>';
+    })() +
+    (function(){
+      const cs = (typeof myCertificates === 'function') ? myCertificates() : [];
+      if (!cs.length) return '';
+      return '<h3 style="margin-top:14px">আমার সার্টিফিকেট</h3><div class="list">' +
+        cs.map(c => '<div class="qrow"><div class="qt">' + esc(c.quiz || 'কুইজ') + ' <span class="pill">' + esc(c.status || 'valid') + '</span></div>' +
+          '<div class="qo">' + esc(c.code) + ' · ' + bn(c.pct) + '% · ' + esc(c.grade || '') + '</div></div>').join('') + '</div>';
+    })() +
     (n ? '<h3 style="margin-top:14px">আমার ফলাফল</h3><div class="list">' +
       mine.slice(0, 20).map(r => '<div class="qrow">' +
         '<div class="qt">' + esc(r.quizTitle || 'কুইজ') + ' <span class="pill">' + bn(r.pct) + '%</span></div>' +
@@ -6833,6 +6849,167 @@ function requireStudent() {
   return false;
 }
 
+
+
+/* ================= ১৪ ধরনের সার্টিফিকেট — কনটেন্ট ================= */
+const CERT_META = {
+  excellence: { en:'CERTIFICATE OF EXCELLENCE',
+    title:'Certificate of Excellence',
+    stmt:'This certificate is proudly presented in recognition of outstanding academic performance, exceptional achievement and dedication to learning.',
+    bn:'অসাধারণ ফলাফল, উচ্চমানের পারফরম্যান্স ও নিরন্তর প্রচেষ্টার স্বীকৃতিস্বরূপ এই সম্মাননা প্রদান করা হলো।',
+    accent:'#0d3f74' },
+  achievement: { en:'CERTIFICATE OF ACHIEVEMENT',
+    title:'Certificate of Achievement',
+    stmt:'This certificate is awarded in recognition of successful performance, sustained effort and notable academic achievement.',
+    bn:'উল্লেখযোগ্য সাফল্য, অধ্যবসায় ও ধারাবাহিক প্রচেষ্টার স্বীকৃতিস্বরূপ এই সম্মাননা প্রদান করা হলো।',
+    accent:'#155e75' },
+  merit: { en:'CERTIFICATE OF MERIT',
+    title:'Certificate of Merit',
+    stmt:'This certificate recognises commendable effort, satisfactory performance and dedication to learning.',
+    bn:'যোগ্যতা, সন্তোষজনক ফলাফল ও শিক্ষার প্রতি নিষ্ঠার স্বীকৃতিস্বরূপ এই সম্মাননা প্রদান করা হলো।',
+    accent:'#7c5c1e' },
+  participation: { en:'CERTIFICATE OF PARTICIPATION',
+    title:'Certificate of Participation',
+    stmt:'This certificate acknowledges active participation, learning initiative and sincere engagement in the assessment programme.',
+    bn:'সক্রিয় অংশগ্রহণ, শিক্ষার উদ্যোগ ও আন্তরিক প্রচেষ্টার স্বীকৃতিস্বরূপ এই সার্টিফিকেট প্রদান করা হলো।',
+    accent:'#3f6212' },
+  perfect: { en:'CERTIFICATE OF PERFECT SCORE', title:'Certificate of Perfect Score',
+    stmt:'This certificate is awarded for achieving a perfect score with outstanding accuracy and complete mastery of the subject matter.',
+    bn:'সম্পূর্ণ নিখুঁত ফলাফল ও অসাধারণ নির্ভুলতার স্বীকৃতিস্বরূপ এই সম্মাননা প্রদান করা হলো।', accent:'#a16207' },
+  distinction: { en:'CERTIFICATE OF DISTINCTION', title:'Certificate of Distinction',
+    stmt:'This certificate is presented for distinguished performance of the highest standard in the assessment programme.',
+    bn:'সর্বোচ্চ মানের অসাধারণ পারফরম্যান্সের স্বীকৃতিস্বরূপ এই সম্মাননা প্রদান করা হলো।', accent:'#6b21a8' },
+  improvement: { en:'CERTIFICATE OF IMPROVEMENT', title:'Certificate of Improvement',
+    stmt:'This certificate recognises remarkable improvement in performance compared with previous assessments.',
+    bn:'পূর্ববর্তী ফলাফলের তুলনায় উল্লেখযোগ্য উন্নতির স্বীকৃতিস্বরূপ এই সম্মাননা প্রদান করা হলো।', accent:'#047857' },
+  consistency: { en:'CERTIFICATE OF CONSISTENCY', title:'Certificate of Consistency',
+    stmt:'This certificate recognises consistent and steady performance across multiple assessments.',
+    bn:'একাধিক পরীক্ষায় ধারাবাহিক ও স্থিতিশীল ফলাফলের স্বীকৃতিস্বরূপ এই সম্মাননা প্রদান করা হলো।', accent:'#0369a1' },
+  mastery: { en:'CERTIFICATE OF SUBJECT MASTERY', title:'Certificate of Subject Mastery',
+    stmt:'This certificate is awarded for demonstrated mastery of a specific subject across multiple assessments.',
+    bn:'নির্দিষ্ট বিষয়ে ধারাবাহিক দক্ষতার স্বীকৃতিস্বরূপ এই সম্মাননা প্রদান করা হলো।', accent:'#9d174d' },
+  milestone: { en:'MILESTONE ACHIEVEMENT CERTIFICATE', title:'Milestone Achievement',
+    stmt:'This certificate marks the successful completion of a significant learning milestone.',
+    bn:'গুরুত্বপূর্ণ শিক্ষাগত মাইলস্টোন অর্জনের স্বীকৃতিস্বরূপ এই সম্মাননা প্রদান করা হলো।', accent:'#b45309' },
+  completion: { en:'CERTIFICATE OF COMPLETION', title:'Certificate of Completion',
+    stmt:'This certificate confirms the successful completion of the designated learning programme.',
+    bn:'নির্ধারিত শিক্ষা কার্যক্রম সফলভাবে সম্পন্ন করার স্বীকৃতিস্বরূপ এই সার্টিফিকেট প্রদান করা হলো।', accent:'#1e40af' },
+  recognition: { en:'SPECIAL RECOGNITION CERTIFICATE', title:'Special Recognition',
+    stmt:'This certificate is presented in recognition of a verified special contribution or outstanding effort.',
+    bn:'বিশেষ অবদান ও অসাধারণ প্রচেষ্টার স্বীকৃতিস্বরূপ এই সম্মাননা প্রদান করা হলো।', accent:'#7f1d1d' },
+  competition: { en:'CERTIFICATE OF EXCELLENCE IN COMPETITION', title:'Excellence in Competition',
+    stmt:'This certificate is awarded for outstanding performance and commendable standing in the competition.',
+    bn:'প্রতিযোগিতায় অসাধারণ ফলাফলের স্বীকৃতিস্বরূপ এই সম্মাননা প্রদান করা হলো।', accent:'#0f766e' },
+  top10: { en:'TOP 10 ACHIEVER CERTIFICATE', title:'Top 10 Achiever',
+    stmt:'This certificate recognises placement among the top ten achievers of the assessment programme.',
+    bn:'সেরা দশ অর্জনকারীর মধ্যে স্থান পাওয়ার স্বীকৃতিস্বরূপ এই সম্মাননা প্রদান করা হলো।', accent:'#854d0e' }
+};
+function certMeta(key) { return CERT_META[key] || CERT_META.participation; }
+
+/* ================= CERTIFICATE ENGINE v2 ================= */
+function certThresholds() {
+  const c = (S.settings && S.settings.cert) || {};
+  return { ex: c.ex ?? 85, ac: c.ac ?? 70, me: c.me ?? 50 };
+}
+function certCategory(pct) {
+  const t = certThresholds(); pct = Number(pct) || 0;
+  if (pct >= t.ex) return { key:'excellence', bn:'এক্সিলেন্স সার্টিফিকেট', en:'CERTIFICATE OF EXCELLENCE' };
+  if (pct >= t.ac) return { key:'achievement', bn:'অ্যাচিভমেন্ট সার্টিফিকেট', en:'CERTIFICATE OF ACHIEVEMENT' };
+  if (pct >= t.me) return { key:'merit', bn:'মেরিট সার্টিফিকেট', en:'CERTIFICATE OF MERIT' };
+  return { key:'participation', bn:'অংশগ্রহণ সার্টিফিকেট', en:'CERTIFICATE OF PARTICIPATION' };
+}
+function certGrade(pct) {
+  const g = (S.settings && S.settings.grade) || {};
+  pct = Number(pct) || 0;
+  if (pct >= (g.ap ?? 90)) return 'A+';
+  if (pct >= (g.a  ?? 80)) return 'A';
+  if (pct >= (g.bp ?? 70)) return 'B+';
+  if (pct >= (g.b  ?? 60)) return 'B';
+  if (pct >= (g.c  ?? 50)) return 'C';
+  if (pct >= (g.d  ?? 40)) return 'D';
+  return 'F';
+}
+function specialAwards(name) {
+  const rows = (S.results || []).filter(r => (name ? r.name === name : true));
+  const out = [];
+  if (!rows.length) return out;
+  const pcts = rows.map(r => Number(r.pct) || 0);
+  const best = Math.max(...pcts);
+  if (pcts.some(p => p === 100)) out.push({ key:'perfect', en:'CERTIFICATE OF PERFECT SCORE', bn:'পারফেক্ট স্কোর' });
+  if (best >= 95) out.push({ key:'distinction', en:'CERTIFICATE OF DISTINCTION', bn:'ডিস্টিংশন' });
+  if (rows.length >= 3) {
+    const last = pcts[0], prev = pcts.slice(1, 4);
+    const avgPrev = prev.length ? prev.reduce((a,b)=>a+b,0)/prev.length : 0;
+    if (last - avgPrev >= 10) out.push({ key:'improvement', en:'CERTIFICATE OF IMPROVEMENT', bn:'উন্নতির স্বীকৃতি' });
+    const spread = Math.max(...pcts) - Math.min(...pcts);
+    if (spread <= 10 && rows.length >= 3) out.push({ key:'consistency', en:'CERTIFICATE OF CONSISTENCY', bn:'ধারাবাহিকতার স্বীকৃতি' });
+  }
+  if (rows.length >= 10) out.push({ key:'milestone', en:'MILESTONE ACHIEVEMENT', bn:'১০টি পরীক্ষার মাইলস্টোন' });
+  return out;
+}
+function myCertificates() {
+  const st = S.student || {};
+  return (S.certs || []).filter(c => st.name && c.name === st.name);
+}
+
+
+/* ---------- অ্যাডমিন সার্টিফিকেট ড্যাশবোর্ড ---------- */
+function certStats() {
+  const list = (DIR.certs && DIR.certs.length) ? DIR.certs : (S.certs || []);
+  const st = { total: list.length, valid: 0, revoked: 0, excellence: 0, achievement: 0, merit: 0, participation: 0 };
+  list.forEach(c => {
+    if ((c.status || 'valid') === 'revoked') st.revoked++; else st.valid++;
+    const k = certCategory(c.pct || 0).key;
+    if (st[k] !== undefined) st[k]++;
+  });
+  return st;
+}
+function renderCertDash() {
+  const box = document.getElementById('certDash');
+  if (!box) return;
+  const st = certStats();
+  const t = certThresholds();
+  const g = (S.settings && S.settings.grade) || {};
+  box.innerHTML =
+    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">' +
+      [['মোট', st.total], ['বৈধ', st.valid], ['বাতিল', st.revoked],
+       ['Excellence', st.excellence], ['Achievement', st.achievement], ['Merit', st.merit]]
+        .map(x => '<div class="qrow" style="text-align:center;padding:8px"><b style="font-size:1.3em">' + bn(x[1]) + '</b><div class="qo">' + x[0] + '</div></div>').join('') +
+    '</div>' +
+    '<h3 style="margin:12px 0 6px">সীমা নির্ধারণ</h3>' +
+    '<div class="row3">' +
+      '<div><label class="fl">Excellence %</label><input id="thEx" type="number" value="' + t.ex + '"></div>' +
+      '<div><label class="fl">Achievement %</label><input id="thAc" type="number" value="' + t.ac + '"></div>' +
+      '<div><label class="fl">Merit %</label><input id="thMe" type="number" value="' + t.me + '"></div>' +
+    '</div>' +
+    '<div class="row3" style="margin-top:8px">' +
+      '<div><label class="fl">A+ থেকে</label><input id="thAp" type="number" value="' + (g.ap ?? 90) + '"></div>' +
+      '<div><label class="fl">A থেকে</label><input id="thA" type="number" value="' + (g.a ?? 80) + '"></div>' +
+      '<div><label class="fl">B+ থেকে</label><input id="thBp" type="number" value="' + (g.bp ?? 70) + '"></div>' +
+    '</div>' +
+    '<button class="btn sm" id="thSave" style="margin-top:10px">সীমা সেভ করুন</button>';
+
+  box.querySelector('#thSave').onclick = () => {
+    S.settings.cert = { ex: +box.querySelector('#thEx').value || 85,
+                        ac: +box.querySelector('#thAc').value || 70,
+                        me: +box.querySelector('#thMe').value || 50 };
+    S.settings.grade = Object.assign({}, S.settings.grade || {}, {
+      ap: +box.querySelector('#thAp').value || 90,
+      a:  +box.querySelector('#thA').value  || 80,
+      bp: +box.querySelector('#thBp').value || 70 });
+    save(); showToast('সীমা সেভ হয়েছে', 'success'); renderCertDash();
+  };
+}
+function certPanelDash() {
+  const host = document.getElementById('tab-admin');
+  if (!host || document.getElementById('certDashCard')) return;
+  const card = document.createElement('div');
+  card.className = 'card'; card.id = 'certDashCard';
+  card.innerHTML = '<h3>সার্টিফিকেট ড্যাশবোর্ড</h3><div id="certDash"></div>';
+  host.insertBefore(card, host.firstChild);
+  loadDirectory().then(() => renderCertDash());
+}
+
 /* ---- final boot ---- */
 try { const c = JSON.parse(localStorage.getItem('mdx_sbcfg') || 'null');
   if (c && c.url && c.key) { SB.url = c.url; SB.key = c.key; } } catch (e) {}
@@ -6848,6 +7025,7 @@ setTimeout(() => { if (sbOn()) { sbSync(); } if (typeof sbPanel === 'function') 
   if (typeof schedulePanel === 'function') schedulePanel();
   if (typeof dirPanel === 'function') dirPanel();
   if (typeof certPanel === 'function') certPanel();
+  if (typeof certPanelDash === 'function') certPanelDash();
   if (typeof feedbackPanel === 'function') feedbackPanel();
   if (typeof practicePanel === 'function') practicePanel();
   if (typeof feedbackAdminPanel === 'function') feedbackAdminPanel();
