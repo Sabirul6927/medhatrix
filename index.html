@@ -3038,6 +3038,7 @@ $$('#tabs button').forEach(b => b.onclick = () => {
   if (b.dataset.tab === 'result') renderResults();
   if (b.dataset.tab === 'profile' && typeof renderProfile === 'function') renderProfile();
   if (b.dataset.tab === 'practice' && typeof renderPracticeSubjects === 'function') renderPracticeSubjects();
+  if (b.dataset.tab === 'quiz' && typeof prefillQuizForm === 'function') prefillQuizForm();
   if (b.dataset.tab === 'students' && typeof renderDirectory === 'function') { renderDirectory();
     loadDirectory().then(() => renderDirectory()); }
   if (b.dataset.tab === 'students' && typeof renderStudents === 'function') { renderStudents();
@@ -3400,14 +3401,31 @@ function startQuizWith(list, name, mins, mode) {
 $('#qStart').onclick = async () => {
   const n = Math.max(1, +$('#qCount').value || 20);
   const mins = Math.max(1, +$('#qTime').value || 20);
-  const name = $('#qName').value.trim() || 'পরীক্ষার্থী';
+  const name = ($('#qName').value || '').trim().replace(/\s+/g, ' ');
+  if (name.length < 2) {
+    showToast('আপনার পুরো নাম লিখুন — এটি বাধ্যতামূলক', 'warn');
+    if ($('#qName')) $('#qName').focus();
+    return;
+  }
+  if (['শিক্ষার্থী','পরীক্ষার্থী','অতিথি','student','guest'].indexOf(name.toLowerCase()) > -1) {
+    showToast('আসল নাম লিখুন — "শিক্ষার্থী" বা "অতিথি" চলবে না', 'warn');
+    if ($('#qName')) $('#qName').focus();
+    return;
+  }
   const phoneVal = ($('#qPhone') ? $('#qPhone').value.trim() : '');
+  if (phoneVal.replace(/[^0-9]/g, '').length < 6) {
+    showToast('মোবাইল নম্বর দিন — এটি আপনার ফলাফল সংরক্ষণের জন্য দরকার', 'warn');
+    if ($('#qPhone')) $('#qPhone').focus();
+    return;
+  }
   let reg = null;
   if (typeof registerStudent === 'function') {
     reg = await registerStudent(name, phoneVal);
     if (reg && reg.ok === false) { showToast(reg.msg, 'warn'); return; }
     if (reg && reg.code) {
-      S.student = { code: reg.code, id: reg.id || null, name: name, phone: phoneVal, at: new Date().toISOString() };
+      S.student = { code: reg.code, id: reg.id || null, name: name, phone: phoneVal,
+        cls: ($('#qCls') ? $('#qCls').value : ''), school: ($('#qSchool') ? $('#qSchool').value.trim() : ''),
+        at: new Date().toISOString() };
       save();
       if (reg.code.indexOf('MDX-O') !== 0 && reg.code.indexOf('MDX-P') !== 0)
         await showStudentCode(reg);
@@ -5951,9 +5969,10 @@ function handlePlayHash() {
   }
   const pool = (typeof liveQuestions === 'function' ? liveQuestions() : S.questions)
     .filter(q => !p.s || q.subject === p.s);
+  if (typeof requireStudent === 'function' && !requireStudent()) return true;
   const list = (pool.length ? pool : S.questions).sort(() => Math.random() - 0.5).slice(0, p.n || 10);
   if (!list.length) { showToast('প্রশ্ন নেই', 'warn'); return true; }
-  startQuizWith(list, 'অতিথি', p.m || 20, 'scheduled');
+  startQuizWith(list, (S.student && S.student.name) || 'শিক্ষার্থী', p.m || 20, 'scheduled');
   return true;
 }
 
@@ -6772,6 +6791,7 @@ function renderPracticeSubjects() {
       '<button class="btn sm ghost" data-prsub="' + esc(sub) + '" data-n="20">২০টি</button></div></div>';
   }).join('');
   box.querySelectorAll('[data-prsub]').forEach(b => b.onclick = () => {
+    if (typeof requireStudent === 'function' && !requireStudent()) return;
     const sub = b.dataset.prsub, n = +b.dataset.n;
     const pool = (S.questions || []).filter(q => q.subject === sub);
     if (!pool.length) { showToast('এই বিষয়ে প্রশ্ন নেই', 'warn'); return; }
@@ -6789,6 +6809,28 @@ function practicePanel() {
     '<div class="list" id="prSubj" style="margin-top:10px"></div>';
   host.insertBefore(card, host.firstChild);
   renderPracticeSubjects();
+}
+
+
+function prefillQuizForm() {
+  try {
+    const st = S.student || {};
+    const map = { '#qName': st.name, '#qPhone': st.phone, '#qSchool': st.school, '#qCls': st.cls };
+    Object.keys(map).forEach(sel => {
+      const el = document.querySelector(sel);
+      if (el && !el.value && map[sel]) el.value = map[sel];
+    });
+  } catch (e) {}
+}
+
+
+function requireStudent() {
+  const st = S.student || {};
+  if ((st.name || '').trim().length >= 2 && (st.phone || '').replace(/[^0-9]/g, '').length >= 6) return true;
+  showToast('আগে কুইজ ট্যাবে গিয়ে নাম ও মোবাইল নম্বর দিন', 'warn');
+  if (typeof switchTab === 'function') switchTab('quiz');
+  setTimeout(() => { const el = document.querySelector('#qName'); if (el) el.focus(); }, 400);
+  return false;
 }
 
 /* ---- final boot ---- */
