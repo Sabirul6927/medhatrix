@@ -236,6 +236,7 @@ body.isadmin .admininline{display:inline-block!important}
     <button data-tab="students" class="adminonly">👥 পরীক্ষার্থী</button>
     <button data-tab="library" class="adminonly">📚 লাইব্রেরি</button>
     <button data-tab="notice">💬 মতামত</button>
+    <button data-tab="play">🎮 খেলুন</button>
     <button data-tab="profile">👤 আমার প্রোফাইল</button>
     <button data-tab="admin" class="adminonly">🛠️ অ্যাডমিন</button>
     <button data-tab="settings" class="adminonly">⚙️ সেটিংস</button>
@@ -516,6 +517,11 @@ body.isadmin .admininline{display:inline-block!important}
       <div class="list" id="stuList" style="margin-top:12px"></div>
       <button class="btn sm ghost" id="stuCsv" style="margin-top:10px">CSV এক্সপোর্ট</button>
     </div>
+  </section>
+
+  <section id="tab-play" class="tab hide">
+    <div class="card" id="playHead"></div>
+    <div class="card"><h3>গেম লাইব্রেরি</h3><div class="list" id="playList" style="margin-top:10px"></div></div>
   </section>
 
   <section id="tab-profile" class="tab hide">
@@ -3036,6 +3042,7 @@ $$('#tabs button').forEach(b => b.onclick = () => {
   if (t) t.classList.remove('hide');
   if (b.dataset.tab === 'bank') renderBank();
   if (b.dataset.tab === 'result') renderResults();
+  if (b.dataset.tab === 'play' && typeof renderPlay === 'function') renderPlay();
   if (b.dataset.tab === 'profile' && typeof renderProfile === 'function') renderProfile();
   if (b.dataset.tab === 'practice' && typeof renderPracticeSubjects === 'function') renderPracticeSubjects();
   if (b.dataset.tab === 'quiz' && typeof prefillQuizForm === 'function') prefillQuizForm();
@@ -3512,6 +3519,7 @@ function finishQuiz() {
   });
   S.results.unshift({ name: LAST.name, cls: (Q && Q.cls) || '', phone: (Q && Q.phone) || '', school: (Q && Q.school) || '',
     ok, total: LAST.total, pct, grade, at: LAST.at });
+  if (typeof awardPlayXP === 'function') awardPlayXP();
   if (typeof touchStreak === 'function') touchStreak();
   if (typeof attemptSave === 'function') attemptSave({ answers: (Q && Q.qs ? buildAnswers(Q.qs, Q.ans) : null), name: LAST.name, cls: (Q && Q.cls) || '', phone: (Q && Q.phone) || '', school: (Q && Q.school) || '', quizTitle: LAST.quizTitle, ok: LAST.ok, total: LAST.total, pct: LAST.pct, grade: LAST.grade, at: LAST.at });
   save();
@@ -7008,6 +7016,75 @@ function certPanelDash() {
   card.innerHTML = '<h3>সার্টিফিকেট ড্যাশবোর্ড</h3><div id="certDash"></div>';
   host.insertBefore(card, host.firstChild);
   loadDirectory().then(() => renderCertDash());
+}
+
+
+/* ================= PLAY & LEARN (আসল প্রশ্নব্যাংক দিয়ে) ================= */
+const PLAY_GAMES = [
+  { id:'daily',   emoji:'🎯', name:'Daily Quiz Challenge', desc:'প্রতিদিনের ৫টি বাছাই করা সাধারণ জ্ঞান ও বিজ্ঞান প্রশ্ন।', xp:50,  n:5,  mins:5,  subj:['সাধারণ জ্ঞান','বিজ্ঞান'] },
+  { id:'brain',   emoji:'🧠', name:'Brain Battle',        desc:'যুক্তি ও বুদ্ধির ছোট পরীক্ষা।', xp:60,  n:5,  mins:4,  diff:'hard' },
+  { id:'word',    emoji:'🔤', name:'Word Master',         desc:'শব্দ, বানান ও ভাষার চ্যালেঞ্জ।', xp:50,  n:5,  mins:5,  subj:['English','Bengali'] },
+  { id:'subject', emoji:'⚡', name:'Subject Battle',      desc:'গণিত, বিজ্ঞান, কম্পিউটার ও ইতিহাস।', xp:70, n:10, mins:8, subj:['গণিত','বিজ্ঞান','কম্পিউটার','ইতিহাস'] },
+  { id:'islamic', emoji:'🕌', name:'Islamic Knowledge',   desc:'ইসলামিক জ্ঞান ও ইতিহাসের প্রশ্ন।', xp:60, n:5, mins:5, subj:['ইসলামিক'] },
+  { id:'mystery', emoji:'🗝️', name:'Treasure Hunt',       desc:'মিশ্র কঠিন প্রশ্ন — সব বিষয় থেকে।', xp:100, n:8, mins:8, diff:'mixed' },
+  { id:'weekly',  emoji:'🏆', name:'Weekly Championship', desc:'সপ্তাহের মিশ্র প্রশ্নে নিজেকে যাচাই করো।', xp:100, n:15, mins:12, diff:'mixed' }
+];
+function playState() {
+  if (!S.play) S.play = { xp: 0, games: 0, best: 0 };
+  return S.play;
+}
+function playLevel() {
+  const xp = playState().xp;
+  let lvl = 1, need = 100, prev = 0;
+  while (xp >= need && lvl < 10) { lvl++; prev = need; need = Math.round(need * 1.65); }
+  return { lvl, xp, prev, need, pct: Math.min(100, Math.round((xp - prev) / (need - prev) * 100)) };
+}
+function renderPlay() {
+  const st = playState(), L = playLevel();
+  const head = document.getElementById('playHead');
+  if (head) head.innerHTML =
+    '<h3>আজকের অভিযান</h3>' +
+    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0">' +
+      '<div class="qrow" style="text-align:center;padding:8px"><b style="font-size:1.3em">' + bn(L.lvl) + '</b><div class="qo">লেভেল</div></div>' +
+      '<div class="qrow" style="text-align:center;padding:8px"><b style="font-size:1.3em">' + bn(st.xp) + '</b><div class="qo">XP</div></div>' +
+      '<div class="qrow" style="text-align:center;padding:8px"><b style="font-size:1.3em">' + bn(st.games) + '</b><div class="qo">গেম</div></div>' +
+    '</div>' +
+    '<div style="height:8px;background:var(--line);border-radius:99px;overflow:hidden">' +
+      '<div style="height:100%;width:' + L.pct + '%;background:var(--accent)"></div></div>' +
+    '<div class="qo" style="margin-top:6px">পরের লেভেলে ' + bn(Math.max(0, L.need - L.xp)) + ' XP বাকি</div>';
+  const list = document.getElementById('playList');
+  if (list) {
+    list.innerHTML = PLAY_GAMES.map(g => '<div class="qrow">' +
+      '<div class="qt">' + g.emoji + ' ' + esc(g.name) + ' <span class="pill">+' + bn(g.xp) + ' XP</span></div>' +
+      '<div class="qo">' + esc(g.desc) + '</div>' +
+      '<div style="margin-top:6px"><button class="btn sm" data-play="' + g.id + '">খেলা শুরু</button></div></div>').join('');
+    list.querySelectorAll('[data-play]').forEach(b => b.onclick = () => startPlayGame(b.dataset.play));
+  }
+}
+function startPlayGame(id) {
+  const g = PLAY_GAMES.find(x => x.id === id);
+  if (!g) return;
+  if (typeof requireStudent === 'function' && !requireStudent()) return;
+  let pool = (typeof liveQuestions === 'function' ? liveQuestions() : S.questions) || [];
+  if (g.subj) pool = pool.filter(q => g.subj.indexOf(q.subject) > -1);
+  if (g.diff === 'mixed') pool = pool.filter(q => ['easy','medium','hard'].indexOf(q.difficulty) > -1);
+  else if (g.diff) pool = pool.filter(q => q.difficulty === g.diff);
+  if (!pool.length) pool = (typeof liveQuestions === 'function' ? liveQuestions() : S.questions) || [];
+  if (!pool.length) { showToast('প্রশ্ন নেই', 'warn'); return; }
+  const list = (typeof pickByDifficulty === 'function' && g.diff === 'mixed')
+    ? pickByDifficulty(pool.slice(), g.n, 'mixed')
+    : pool.slice().sort(() => Math.random() - 0.5).slice(0, Math.min(g.n, pool.length));
+  startQuizWith(list, (S.student && S.student.name) || 'শিক্ষার্থী', g.mins, 'play');
+  if (Q) { Q.playGame = g; Q.title = g.name; }
+}
+function awardPlayXP() {
+  if (!Q || !Q.playGame || !LAST) return;
+  const g = Q.playGame;
+  const st = playState();
+  const earned = Math.round(g.xp * (LAST.pct / 100));
+  st.xp += earned; st.games++; st.best = Math.max(st.best || 0, LAST.pct);
+  save();
+  showToast('+' + bn(earned) + ' XP অর্জিত!', 'success');
 }
 
 /* ---- final boot ---- */
