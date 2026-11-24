@@ -671,15 +671,6 @@ input,select,textarea{border-radius:var(--r-md)!important;padding:12px 14px!impo
         <div><label class="fl">স্টোরেজ ব্যবহার</label><input id="adStore" readonly></div></div>
       <p class="hint">Editor শুধু নোটিশ ও প্রশ্ন সম্পাদনা করতে পারবে।</p>
     </div>
-    <div class="card"><h3>রিপোর্ট কার্ড</h3>
-      <label class="fl">কঠিনতা</label><select id="qDiff">
-        <option value="mixed" selected>মিশ্র (৪০% সহজ · ৪০% মাঝারি · ২০% কঠিন)</option>
-        <option value="easy">সহজ</option><option value="medium">মাঝারি</option><option value="hard">কঠিন</option>
-      </select>
-      <div class="row"><div><label class="fl">শিক্ষার্থীর নাম</label><input id="rcName"></div>
-        <div><label class="fl">শ্রেণি</label><input id="rcCls"></div></div>
-      <button class="btn" id="rcPrint" style="margin-top:10px">রিপোর্ট কার্ড প্রিন্ট</button>
-    </div>
   </section>
 
   <!-- SETTINGS -->
@@ -4919,9 +4910,11 @@ function handlePhoto(file) {
 /* ---------- report card ---------- */
 function printReportCard() {
   if (!needAdmin()) return;
-  const name = $('#rcName').value.trim() || 'শিক্ষার্থী';
-  const cls = $('#rcCls').value.trim() || '—';
-  const rs = S.results.filter(r => r.name.toLowerCase() === name.toLowerCase());
+  const q = (($('#rcQuery') || {}).value || '').trim();
+  const name = q || 'শিক্ষার্থী';
+  const cls = (($('#rcClass') || {}).value) || '—';
+  const rs = S.results.filter(r => (r.name || '').toLowerCase() === name.toLowerCase() ||
+    (r.phone || '') === q || (r.studentCode || '').toLowerCase() === q.toLowerCase());
   const rows = rs.length ? rs.map(r => `<tr><td>${esc(r.name)}</td><td>${r.ok}/${r.total}</td>
       <td>${r.pct}%</td><td>${esc(r.grade)}</td><td>${new Date(r.at).toLocaleDateString('en-GB')}</td></tr>`).join('')
     : '<tr><td colspan="5" style="text-align:center;color:#777">কোনো ফলাফল নেই</td></tr>';
@@ -4972,7 +4965,6 @@ function initV3() {
   const pIn = $('#adPhoto'); if (pIn) pIn.onchange = ev => { handlePhoto(ev.target.files[0]); ev.target.value = ''; };
   const pDel = $('#adPhotoDel');
   if (pDel) pDel.onclick = () => { S.brand.founder.photo = ''; save(); renderFounderHero(); renderAdmin(); };
-  const rc = $('#rcPrint'); if (rc) rc.onclick = printReportCard;
   const lk = $('#lockBtn'); if (lk) lk.onclick = adminLogin;
   const lg = $('#lgGo'); if (lg) lg.onclick = doLogin;
   const lc = $('#lgCancel'); if (lc) lc.onclick = () => { $('#loginModal').style.display = 'none'; };
@@ -7493,12 +7485,23 @@ function reportPanel() {
   if (!host || document.getElementById('rcCard')) return;
   const card = document.createElement('div');
   card.className = 'card'; card.id = 'rcCard';
-  card.innerHTML = '<h3>ডিজিটাল রিপোর্ট কার্ড</h3>' +
-    '<p class="hint">শিক্ষার্থীর নাম, মোবাইল নম্বর বা স্টুডেন্ট আইডি দিন — ব্র্যান্ডেড রিপোর্ট কার্ড PDF তৈরি হবে।</p>' +
+  card.innerHTML = '<h3>রিপোর্ট কার্ড</h3>' +
+    '<p class="hint">শিক্ষার্থীর নাম, মোবাইল নম্বর বা স্টুডেন্ট আইডি দিন — ডিজিটাল পোর্টফোলিও ডাউনলোড করুন বা সরাসরি প্রিন্ট করুন।</p>' +
+    '<label class="fl">শিক্ষার্থী</label>' +
     '<input id="rcQuery" placeholder="নাম / মোবাইল / MDX-2026-000001">' +
-    '<button class="btn" id="rcBtn" style="margin-top:10px;width:100%">সম্পূর্ণ পোর্টফোলিও ডাউনলোড</button>';
+    '<label class="fl" style="margin-top:8px">শ্রেণি</label>' +
+    '<select id="rcClass">' +
+      '<option value="">শ্রেণি বাছুন</option>' +
+      '<option>V</option><option>VI</option><option>VII</option><option>VIII</option>' +
+      '<option>IX</option><option>X</option><option>XI</option><option>XII</option>' +
+    '</select>' +
+    '<div class="row" style="margin-top:12px">' +
+      '<button class="btn" id="rcBtn" style="flex:1">পোর্টফোলিও ডাউনলোড</button>' +
+      '<button class="btn ghost" id="rcPrint" style="flex:1">রিপোর্ট কার্ড প্রিন্ট</button>' +
+    '</div>';
   host.insertBefore(card, host.firstChild);
   card.querySelector('#rcBtn').onclick = downloadPortfolio;
+  card.querySelector('#rcPrint').onclick = printReportCard;
 }
 
 /* ================= COMPLETE STUDENT PORTFOLIO (multi-page PDF) ================= */
