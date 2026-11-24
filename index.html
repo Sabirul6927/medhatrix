@@ -264,16 +264,12 @@ input,select,textarea{border-radius:var(--r-md)!important;padding:12px 14px!impo
   <div class="tabs" id="tabs">
     <button data-tab="home" class="on">🏠 হোম</button>
     <button data-tab="practice">🎯 অনুশীলন</button>
-    <button data-tab="suggestion" class="adminonly">💡 সাজেশন</button>
     <button data-tab="mistake" class="adminonly">📕 ভুল খাতা</button>
-    <button data-tab="planner" class="adminonly">🗓️ প্ল্যানার</button>
-    <button data-tab="import" class="adminonly">📄 PDF ইমপোর্ট</button>
-    <button data-tab="ai" class="adminonly">🤖 AI স্টুডিও</button>
     <button data-tab="bank" class="adminonly">📚 প্রশ্নব্যাংক</button>
     <button data-tab="quiz">✍️ কুইজ</button>
     <button data-tab="result" class="adminonly">📊 ফলাফল</button>
     <button data-tab="students" class="adminonly">👥 পরীক্ষার্থী</button>
-    <button data-tab="library" class="adminonly">📚 লাইব্রেরি</button>
+    <button data-tab="library">📚 লাইব্রেরি</button>
     <button data-tab="notice">💬 মতামত</button>
     <button data-tab="play">🎮 খেলুন</button>
     <button data-tab="profile">👤 আমার প্রোফাইল</button>
@@ -372,7 +368,7 @@ input,select,textarea{border-radius:var(--r-md)!important;padding:12px 14px!impo
   </section>
 
   <!-- SUGGESTION -->
-  <section id="tab-suggestion" class="tab hide">
+  <section id="tab-suggestion" class="tab hide" style="display:none">
     <div class="card"><h3>সাজেশন</h3>
       <p class="hint" style="margin-bottom:10px">এগুলো সিলেবাসভিত্তিক প্রস্তুতি — বোর্ডে নিশ্চিত প্রশ্ন নয়।</p>
       <div class="list" id="sugList"></div></div>
@@ -393,7 +389,7 @@ input,select,textarea{border-radius:var(--r-md)!important;padding:12px 14px!impo
   </section>
 
   <!-- PLANNER -->
-  <section id="tab-planner" class="tab hide">
+  <section id="tab-planner" class="tab hide" style="display:none">
     <div class="card"><h3>প্ল্যানার</h3>
       <div class="row3"><div><label class="fl">লক্ষ্য</label><input id="planTitle"></div>
         <div><label class="fl">বিষয়</label><input id="planSub"></div>
@@ -420,7 +416,7 @@ input,select,textarea{border-radius:var(--r-md)!important;padding:12px 14px!impo
   </section>
 
   <!-- AI -->
-  <section id="tab-ai" class="tab hide">
+  <section id="tab-ai" class="tab hide" style="display:none">
     <div class="card">
       <h3>AI দিয়ে প্রশ্ন তৈরি</h3>
       <div class="hint" style="margin-bottom:10px">
@@ -593,12 +589,24 @@ input,select,textarea{border-radius:var(--r-md)!important;padding:12px 14px!impo
     <div class="card">
       <h3>ডিজিটাল লাইব্রেরি</h3>
       <p class="hint" id="libMeter" style="margin-bottom:10px"></p>
-      <input id="libSearch" placeholder="ফাইল খুঁজুন…">
+      <div class="row"><div><label class="fl">বোর্ড</label>
+        <select id="libBoard"><option value="">সব বোর্ড</option>
+          <option>WBBSE</option><option>CBSE</option><option>ICSE</option><option>State</option></select></div>
+        <div><label class="fl">শ্রেণি</label>
+        <select id="libClass"><option value="">সব শ্রেণি</option>
+          <option>V</option><option>VI</option><option>VII</option><option>VIII</option>
+          <option>IX</option><option>X</option><option>XI</option><option>XII</option></select></div></div>
+      <input id="libSearch" placeholder="ফাইল খুঁজুন…" style="margin-top:10px">
       <div class="list" id="libList" style="margin-top:12px"></div>
     </div>
     <div class="card adminonly">
       <h3>নতুন ফাইল প্রকাশ করুন</h3>
       <label class="fl">শিরোনাম</label><input id="libTitle" placeholder="যেমন: ভৌতবিজ্ঞান নোট — অধ্যায় ১">
+      <div class="row"><div><label class="fl">বোর্ড</label>
+        <select id="libUpBoard"><option>WBBSE</option><option>CBSE</option><option>ICSE</option><option>State</option></select></div>
+        <div><label class="fl">শ্রেণি</label>
+        <select id="libUpClass"><option>V</option><option>VI</option><option>VII</option><option>VIII</option>
+          <option>IX</option><option>X</option><option>XI</option><option>XII</option></select></div></div>
       <div class="row"><div><label class="fl">বিষয়</label><select id="libSub"></select></div>
         <div><label class="fl">অধ্যায়</label><select id="libCh"></select></div></div>
       <input type="file" id="libFile" class="hide" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,image/*,video/*,audio/*">
@@ -695,7 +703,7 @@ input,select,textarea{border-radius:var(--r-md)!important;padding:12px 14px!impo
 
 <div class="bottomnav" id="bottomnav">
   <button data-go="home" class="on"><span class="ic">🏠</span><span>হোম</span></button>
-  <button data-go="study"><span class="ic">📖</span><span>পড়া</span></button>
+  <button data-go="play"><span class="ic">🎮</span><span>খেলুন</span></button>
   <button data-go="practice"><span class="ic">🎯</span><span>অনুশীলন</span></button>
   <button data-go="quiz"><span class="ic">✍️</span><span>কুইজ</span></button>
   <button data-go="more"><span class="ic">☰</span><span>আরও</span></button>
@@ -4442,7 +4450,12 @@ async function renderLibrary() {
   try { LIB = await fileAll(); } catch (e) { LIB = []; }
   LIB.sort((a, b) => new Date(b.at) - new Date(a.at));
   const q = (($('#libSearch') || {}).value || '').toLowerCase();
-  const list = q ? LIB.filter(f => (f.title + f.name + f.subject + f.chapter).toLowerCase().includes(q)) : LIB;
+  const fb = ($('#libBoard') || {}).value || '';
+  const fc = ($('#libClass') || {}).value || '';
+  let list = LIB.slice();
+  if (fb) list = list.filter(f => (f.board || '') === fb);
+  if (fc) list = list.filter(f => (f.cls || '') === fc);
+  if (q) list = list.filter(f => ((f.title||'') + (f.name||'') + (f.subject||'') + (f.chapter||'')).toLowerCase().includes(q));
 
   const meter = $('#libMeter');
   if (meter) {
@@ -4452,7 +4465,7 @@ async function renderLibrary() {
 
   box.innerHTML = list.length ? list.map(f => `<div class="qrow">
       <div class="qt">${fileIcon(f.type, f.name)} ${esc(f.title || f.name)}</div>
-      <div class="qo">${esc(f.subject || '')}${f.chapter ? ' · ' + esc(f.chapter) : ''} ·
+      <div class="qo">${f.board ? esc(f.board) + ' · ' : ''}${f.cls ? 'শ্রেণি ' + esc(f.cls) + ' · ' : ''}${esc(f.subject || '')}${f.chapter ? ' · ' + esc(f.chapter) : ''} ·
         ${humanSize(f.size)} · ${new Date(f.at).toLocaleDateString('en-GB')}
         ${f.downloads ? ' · ' + bn(f.downloads) + ' বার ডাউনলোড' : ''}</div>
       <div style="margin-top:7px;display:flex;gap:7px;flex-wrap:wrap">
@@ -4529,6 +4542,8 @@ async function uploadFile(file) {
     type: file.type || 'application/octet-stream', size: file.size, blob: file,
     subject: ($('#libSub') && $('#libSub').value) || '',
     chapter: ($('#libCh') && $('#libCh').value) || '',
+    board: ($('#libUpBoard') && $('#libUpBoard').value) || '',
+    cls: ($('#libUpClass') && $('#libUpClass').value) || '',
     at: new Date().toISOString(), downloads: 0
   };
   showToast('আপলোড হচ্ছে…', 'info');
@@ -4550,6 +4565,7 @@ function initLibrary() {
   const btn = $('#libPick');
   if (btn) btn.onclick = () => $('#libFile').click();
   const s = $('#libSearch'); if (s) s.oninput = renderLibrary;
+  ['#libBoard', '#libClass'].forEach(sel => { const el = $(sel); if (el) el.onchange = renderLibrary; });
   const c = $('#viewerClose'); if (c) c.onclick = closeViewer;
   const v = $('#viewer'); if (v) v.onclick = e => { if (e.target === v) closeViewer(); };
 }
@@ -7284,10 +7300,10 @@ initAppShell();
 initV3();
 setTimeout(() => { if (sbOn()) { sbSync(); } if (typeof sbPanel === 'function') sbPanel();
   if (typeof importPanel === 'function') importPanel();
-  if (typeof aiPanel === 'function') aiPanel();
+  /* AI স্টুডিও সরানো হয়েছে */
   if (typeof phase1Panel === 'function') phase1Panel();
   if (typeof homeExtras === 'function') homeExtras();
-  if (typeof addTutorButton === 'function') addTutorButton();
+  /* AI সহায়ক সরানো হয়েছে */
   if (typeof schedulePanel === 'function') schedulePanel();
   if (typeof dirPanel === 'function') dirPanel();
   if (typeof certPanel === 'function') certPanel();
