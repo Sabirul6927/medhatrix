@@ -6221,8 +6221,9 @@ function buildAnswers(qs, ans) {
 }
 async function attemptSave(rec) {
   if (typeof sbOn !== 'function' || !sbOn()) return false;
-  const row = { name: rec.name || 'শিক্ষার্থী', class: rec.cls || '',
-    phone: rec.phone || '', school: rec.school || '', quiz: rec.quizTitle || '',
+  const stu = S.student || {};
+  const row = { name: rec.name || stu.name || 'শিক্ষার্থী', class: rec.cls || stu.cls || '',
+    phone: rec.phone || stu.phone || '', school: rec.school || stu.school || '', quiz: rec.quizTitle || '',
     score: rec.ok, total: rec.total, pct: rec.pct, grade: rec.grade,
     taken_at: rec.at || new Date().toISOString(),
     answers: rec.answers || null };
@@ -6232,7 +6233,7 @@ async function attemptSave(rec) {
         method: 'POST',
         headers: { 'apikey': SB.key, 'Authorization': 'Bearer ' + SB.key,
                    'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-        body: JSON.stringify(Object.assign({}, row, { student_id: (Q && Q.studentId) || null }))
+        body: JSON.stringify(Object.assign({}, row, { student_id: (Q && Q.studentId) || stu.id || null }))
       });
       if (res.ok) return true;
       const err = await res.text();
@@ -6256,7 +6257,7 @@ async function flushPendingAttempts() {
         method: 'POST',
         headers: { 'apikey': SB.key, 'Authorization': 'Bearer ' + SB.key,
                    'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-        body: JSON.stringify(Object.assign({}, row, { student_id: (Q && Q.studentId) || null }))
+        body: JSON.stringify(Object.assign({}, row, { student_id: (Q && Q.studentId) || stu.id || null }))
       });
       if (res.ok) sent++; else left.push(row);
     } catch (e) { left.push(row); }
