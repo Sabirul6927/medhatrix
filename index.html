@@ -3437,8 +3437,12 @@ function printPaper() {
 let Q = null, timer = null;
 function startQuizWith(list, name, mins, mode) {
   if (!list || !list.length) { toast('প্রশ্ন নেই'); return; }
-  Q = { name: name || 'শিক্ষার্থী', qs: list, ans: new Array(list.length).fill(null),
-        idx: 0, left: (mins || 10) * 60, total: (mins || 10) * 60, mode: mode || 'quiz' };
+  /* আগের Q-তে শিক্ষার্থীর তথ্য (phone, studentId, cls, school) থাকলে সেগুলো রেখে দিই */
+  const keep = (Q && typeof Q === 'object') ? Q : {};
+  Q = Object.assign({}, keep, {
+        name: name || keep.name || 'শিক্ষার্থী',
+        qs: list, ans: new Array(list.length).fill(null),
+        idx: 0, left: (mins || 10) * 60, total: (mins || 10) * 60, mode: mode || 'quiz' });
   $$('#tabs button').forEach(x => x.classList.remove('on'));
   const qb = document.querySelector('#tabs [data-tab="quiz"]'); if (qb) qb.classList.add('on');
   $$('.tab').forEach(t => t.classList.add('hide'));
