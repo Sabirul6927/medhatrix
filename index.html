@@ -6513,20 +6513,42 @@ function renderDirectory() {
   const box = document.getElementById('dirList');
   if (!box) return;
   const q = ((document.getElementById('dirSearch') || {}).value || '').toLowerCase();
-  const profMap = new Map(DIR.profiles.map(p => [p.id, p]));
-  let list = groupAttemptsByStudent();
-  list.forEach(g => {
-    const p = profMap.get(g.id);
-    if (p) { g.code = p.student_code; g.name = p.name || g.name; }
-    g.count = g.rows.length;
-    g.avg = Math.round(g.rows.reduce((s, r) => s + (Number(r.pct) || 0), 0) / g.count);
-    g.certs = DIR.certs.filter(c => c.name === g.name).length;
-    g.last = g.rows[0] ? g.rows[0].taken_at : '';
+
+  /* ক্লাউড প্রোফাইলই মূল তালিকা — ডিভাইসের পুরোনো রেকর্ড নয় */
+  const profiles = (DIR.profiles || []).filter(p => (p.status || 'active') !== 'merged');
+  const byStudent = new Map();
+  (DIR.attempts || []).forEach(a => {
+    if (!a.student_id) return;
+    if (!byStudent.has(a.student_id)) byStudent.set(a.student_id, []);
+    byStudent.get(a.student_id).push(a);
   });
-  if (q) list = list.filter(g => (g.name + g.phone + g.school + (g.code || '')).toLowerCase().includes(q));
-  list.sort((a, b) => new Date(b.last) - new Date(a.last));
+
+  let list = profiles.map(p => {
+    const rows = (byStudent.get(p.id) || []).slice()
+      .sort((x, y) => new Date(y.taken_at) - new Date(x.taken_at));
+    const count = rows.length;
+    const avg = count ? Math.round(rows.reduce((s, r) => s + (Number(r.pct) || 0), 0) / count) : 0;
+    return {
+      id: p.id, code: p.student_code, name: p.name || '—',
+      cls: p.class || '—', phone: p.phone || '—', school: p.school || '—',
+      rows, count, avg,
+      certs: (DIR.certs || []).filter(c => c.name === p.name).length,
+      last: rows[0] ? rows[0].taken_at : (p.last_seen || '')
+    };
+  }).filter(g => g.name && g.name !== '—');
+
+  /* পুরোনো অযাচিত রেকর্ড (student_id নেই) — আলাদা করে দেখানো */
+  const orphans = (DIR.attempts || []).filter(a => !a.student_id);
+
+  if (q) list = list.filter(g =>
+    ((g.name || '') + (g.phone || '') + (g.school || '') + (g.code || '')).toLowerCase().includes(q));
+  list.sort((a, b) => new Date(b.last || 0) - new Date(a.last || 0));
+
   const cnt = document.getElementById('dirCount');
-  if (cnt) cnt.textContent = bn(list.length) + ' জন শিক্ষার্থী · ' + bn(DIR.attempts.length) + ' পরীক্ষা';
+  if (cnt) cnt.textContent = bn(list.length) + ' জন শিক্ষার্থী · ' +
+    bn((DIR.attempts || []).length) + ' পরীক্ষা' +
+    (orphans.length ? ' · ' + bn(orphans.length) + ' পুরোনো' : '');
+
   box.innerHTML = list.length ? list.map((g, i) => `<div class="qrow">
       <div class="qt">${esc(g.name)} <span class="pill">${bn(g.avg)}%</span></div>
       <div class="qo">${g.code ? 'আইডি: <b>' + esc(g.code) + '</b><br>' : ''}
@@ -6534,7 +6556,8 @@ function renderDirectory() {
         স্কুল: ${esc(g.school)}<br>
         পরীক্ষা: <b>${bn(g.count)}</b> · সার্টিফিকেট: ${bn(g.certs)} · গড়: ${bn(g.avg)}%</div>
       <div style="margin-top:6px"><button class="btn sm" data-dir="${i}">প্রোফাইল দেখুন</button></div>
-    </div>`).join('') : '<div class="qrow" style="text-align:center;color:var(--muted)">কোনো তথ্য নেই</div>';
+    </div>`).join('') : '<div class="qrow" style="text-align:center;color:var(--muted)">কোনো শিক্ষার্থী নেই</div>';
+
   box.querySelectorAll('[data-dir]').forEach(b => b.onclick = () => showProfile(list[+b.dataset.dir]));
   const sc = document.getElementById('dirSearch');
   if (sc && !sc._b) { sc._b = true; sc.oninput = renderDirectory; }
@@ -6821,6 +6844,9 @@ function renderProfile() {
       '<div style="font-family:monospace;font-size:1.2em;color:var(--accent);font-weight:800">' +
         (st.code ? esc(st.code) : 'কুইজ দিলে তৈরি হবে') + '</div>' +
       '<div class="qo" style="margin-top:6px">' + esc(st.name || '—') + ' · ' + esc(st.phone || '—') + '</div>' +
+      (st.code || st.phone
+        ? '<button class="btn" id="myReportBtn" style="margin-top:12px;width:100%">📄 আমার রিপোর্ট কার্ড ডাউনলোড</button>'
+        : '<div class="qo" style="margin-top:10px">রিপোর্ট কার্ড পেতে আগে একটা কুইজ দিন</div>') +
     '</div>' +
     '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:10px">' +
       '<div class="qrow" style="text-align:center"><b style="font-size:1.4em">' + bn(n) + '</b><div class="qo">পরীক্ষা</div></div>' +
@@ -7835,6 +7861,22 @@ async function downloadPortfolio() {
   }
   if (!st) st = findStudentRows(q);
   if (!st) { showToast('এই নাম / নম্বর / আইডিতে কোনো ফলাফল নেই', 'warn'); return; }
+
+  /* ড্রপডাউনে শ্রেণি বাছা থাকলে — সেটাই ব্যবহার ও সংরক্ষণ */
+  const selCls = (($('#rcClass') || {}).value) || '';
+  if (selCls) {
+    st.cls = selCls;
+    if (st.code && typeof sbOn === 'function' && sbOn() && SB.token) {
+      try {
+        await fetch(SB.url + '/rest/v1/rpc/set_student_class', {
+          method: 'POST',
+          headers: { 'apikey': SB.key, 'Authorization': 'Bearer ' + (SB.token || SB.key),
+                     'Content-Type': 'application/json' },
+          body: JSON.stringify({ p_code: st.code, p_class: selCls })
+        });
+      } catch (e) {}
+    }
+  }
   const btn = $('#rcBtn'); const old = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = 'তৈরি হচ্ছে…'; }
   try {
@@ -7926,6 +7968,49 @@ function pfBars(g, items, x, y, w, h) {
     g.textAlign = 'left';
   });
 }
+
+
+/* ---------- শিক্ষার্থীর নিজের রিপোর্ট কার্ড ---------- */
+async function downloadMyPortfolio() {
+  const st = S.student || {};
+  const q = st.code || st.phone || '';
+  if (!q) { showToast('আগে একটা কুইজ দিন — তারপর রিপোর্ট তৈরি হবে', 'warn'); return; }
+  const btn = document.getElementById('myReportBtn');
+  const old = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'তৈরি হচ্ছে…'; }
+  try {
+    let data = null;
+    if (typeof fetchCloudPortfolio === 'function') {
+      const cloud = await fetchCloudPortfolio(q);
+      if (cloud) data = cloudToSt(cloud);
+    }
+    if (!data) {
+      const mine = (S.results || []).filter(r =>
+        st.code ? r.studentCode === st.code : r.phone === st.phone);
+      if (!mine.length) { showToast('কোনো ফলাফল পাওয়া যায়নি', 'warn'); return; }
+      data = { name: st.name, phone: st.phone, code: st.code, rows: mine, plays: [], certs: [] };
+    }
+    const { pages, reportId } = await buildPortfolio(data);
+    const blob = pdfFromCanvases(pages, true);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'MEDHATRIX_Report_' + (data.code || data.phone || 'me') + '.pdf';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    showToast(pages.length + ' পৃষ্ঠার রিপোর্ট ডাউনলোড হয়েছে', 'success');
+  } catch (e) {
+    showToast('ব্যর্থ: ' + e.message, 'bad');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = old; }
+  }
+}
+
+
+/* প্রোফাইলের ডাউনলোড বোতাম (ইভেন্ট ডেলিগেশন) */
+document.addEventListener('click', function (e) {
+  const b = e.target.closest && e.target.closest('#myReportBtn');
+  if (b && typeof downloadMyPortfolio === 'function') downloadMyPortfolio();
+});
 
 /* ---- final boot ---- */
 try { const c = JSON.parse(localStorage.getItem('mdx_sbcfg') || 'null');
