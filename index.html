@@ -7747,6 +7747,40 @@ async function buildPortfolio(st) {
     pages.push(c);
   }
 
+  /* --- চার্ট পৃষ্ঠা --- */
+  if (rows.length) {
+    const { c, g } = await pfPage();
+    await pfLetterhead(g, pages.length + 1, 0, reportId, logo);
+    let y = 170;
+    y = pfSection(g, 'পারফরম্যান্স গ্রাফ / Performance Trend', y);
+    pfLineChart(g, rows.map(r => Number(r.pct) || 0), 110, y, 980, 150);
+    y += 200;
+    y = pfSection(g, 'কার্যক্রমের ধরন / Activity Distribution', y);
+    const q = rows.length, pl = (st.plays || []).length;
+    pfBars(g, [['কুইজ', q], ['গেম', pl], ['সার্টিফিকেট', (st.certs || []).length]], 110, y, 900, 130);
+    y += 200;
+    y = pfSection(g, 'প্রথম ও শেষ ফলাফল / First vs Latest', y);
+    g.fillStyle = PF.INK; g.font = '400 12px "Segoe UI", system-ui, sans-serif';
+    const f = rows[0], l = rows[rows.length - 1];
+    g.fillText('প্রথম: ' + (f.quizTitle || 'কুইজ') + ' — ' + f.pct + '%  (' + new Date(f.at).toLocaleDateString('en-GB') + ')', 64, y + 14);
+    g.fillText('শেষ: ' + (l.quizTitle || 'কুইজ') + ' — ' + l.pct + '%  (' + new Date(l.at).toLocaleDateString('en-GB') + ')', 64, y + 38);
+    pages.push(c);
+  }
+
+  /* --- Play & Learn ইতিহাস --- */
+  if ((st.plays || []).length) {
+    const { c, g } = await pfPage();
+    await pfLetterhead(g, pages.length + 1, 0, reportId, logo);
+    let y = 170;
+    y = pfSection(g, 'Play & Learn ইতিহাস / Game History', y);
+    const pr = st.plays.slice(0, 26).map((p, i) => [
+      (i + 1) + '. ' + (p.game || 'গেম'), (p.score || 0) + '/' + (p.total || 0),
+      (p.pct || 0) + '%', (p.xp || 0) + ' XP', new Date(p.at).toLocaleDateString('en-GB')
+    ]);
+    pfTable(g, ['গেম', 'নম্বর', 'শতকরা', 'XP', 'তারিখ'], [64, 640, 760, 870, 990], pr, y, 24);
+    pages.push(c);
+  }
+
   /* --- শেষ পৃষ্ঠা: সারসংক্ষেপ ও স্বাক্ষর --- */
   {
     const { c, g } = await pfPage();
@@ -7793,7 +7827,12 @@ async function buildPortfolio(st) {
 
 async function downloadPortfolio() {
   const q = (($('#rcQuery') || {}).value || '').trim();
-  const st = findStudentRows(q);
+  let st = null;
+  if (typeof fetchCloudPortfolio === 'function') {
+    const cloud = await fetchCloudPortfolio(q);
+    if (cloud) st = cloudToSt(cloud);
+  }
+  if (!st) st = findStudentRows(q);
   if (!st) { showToast('এই নাম / নম্বর / আইডিতে কোনো ফলাফল নেই', 'warn'); return; }
   const btn = $('#rcBtn'); const old = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = 'তৈরি হচ্ছে…'; }
@@ -7808,6 +7847,83 @@ async function downloadPortfolio() {
     showToast(pages.length + ' পৃষ্ঠার পোর্টফোলিও ডাউনলোড হয়েছে', 'success');
   } catch (e) { showToast('ব্যর্থ: ' + e.message, 'bad'); }
   finally { if (btn) { btn.disabled = false; btn.textContent = old; } }
+}
+
+/* ================= PORTFOLIO PHASE 2 — ক্লাউড ইন্টিগ্রেশন ================= */
+async function fetchCloudPortfolio(q) {
+  if (typeof sbOn !== 'function' || !sbOn()) return null;
+  try {
+    const res = await fetch(SB.url + '/rest/v1/rpc/student_portfolio', {
+      method: 'POST',
+      headers: { 'apikey': SB.key, 'Authorization': 'Bearer ' + SB.key,
+                 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_code: q })
+    });
+    if (!res.ok) return null;
+    const d = await res.json();
+    if (!d || !d.profile) return null;
+    return d;
+  } catch (e) { return null; }
+}
+
+function cloudToSt(d) {
+  const p = d.profile || {};
+  const rows = (d.attempts || []).map(a => ({
+    name: p.name, phone: p.phone, studentCode: p.student_code,
+    quizTitle: a.quiz || 'কুইজ', ok: a.score, total: a.total,
+    pct: a.pct, grade: a.grade, at: a.at, answers: a.answers
+  }));
+  const plays = (d.plays || []).map(x => ({
+    game: x.game || x.game_id, score: x.score, total: x.total,
+    pct: x.pct, xp: x.xp, at: x.at
+  }));
+  const certs = (d.certificates || []).map(c => ({
+    code: c.code, quiz: c.quiz, pct: c.pct, grade: c.grade,
+    status: c.status, at: c.at
+  }));
+  return { name: p.name, phone: p.phone, code: p.student_code,
+           cls: p.class, school: p.school, rows, plays, certs,
+           stats: d.stats || {}, cloud: true };
+}
+
+/* ---------- চার্ট হেল্পার ---------- */
+function pfLineChart(g, pts, x, y, w, h) {
+  if (!pts.length) return;
+  g.strokeStyle = '#E6EDF6'; g.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const yy = y + (h / 4) * i;
+    g.beginPath(); g.moveTo(x, yy); g.lineTo(x + w, yy); g.stroke();
+  }
+  g.strokeStyle = PF.NAVY; g.lineWidth = 2; g.beginPath();
+  pts.forEach((p, i) => {
+    const px = x + (pts.length === 1 ? w / 2 : (w / (pts.length - 1)) * i);
+    const py = y + h - (h * (Math.max(0, Math.min(100, p)) / 100));
+    i ? g.lineTo(px, py) : g.moveTo(px, py);
+  });
+  g.stroke();
+  g.fillStyle = PF.GOLD;
+  pts.forEach((p, i) => {
+    const px = x + (pts.length === 1 ? w / 2 : (w / (pts.length - 1)) * i);
+    const py = y + h - (h * (Math.max(0, Math.min(100, p)) / 100));
+    g.beginPath(); g.arc(px, py, 2.6, 0, 7); g.fill();
+  });
+  g.fillStyle = '#7a8aa0'; g.font = '400 9px "Segoe UI", system-ui, sans-serif';
+  g.fillText('0%', x - 22, y + h); g.fillText('100%', x - 32, y + 8);
+}
+function pfBars(g, items, x, y, w, h) {
+  const max = Math.max(1, ...items.map(i => i[1]));
+  const bw = w / items.length;
+  items.forEach((it, i) => {
+    const bh = (h * it[1]) / max;
+    g.fillStyle = PF.NAVY;
+    g.fillRect(x + i * bw + bw * 0.15, y + h - bh, bw * 0.7, bh);
+    g.fillStyle = '#5b6b7c'; g.font = '400 9.5px "Segoe UI", system-ui, sans-serif';
+    g.textAlign = 'center';
+    g.fillText(String(it[0]).slice(0, 14), x + i * bw + bw / 2, y + h + 14);
+    g.fillStyle = PF.INK; g.font = '700 9.5px "Segoe UI", system-ui, sans-serif';
+    g.fillText(String(it[1]), x + i * bw + bw / 2, y + h - bh - 5);
+    g.textAlign = 'left';
+  });
 }
 
 /* ---- final boot ---- */
