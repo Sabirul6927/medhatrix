@@ -7746,6 +7746,10 @@ async function buildPortfolio(st) {
   g.fillStyle = '#5b6b7c'; g.font = '500 10.5px "Segoe UI", system-ui, sans-serif';
   g.textAlign = 'right';
   g.fillText((st.code || '') + (st.phone ? '  ·  ' + st.phone : '') + (st.cls ? '  ·  শ্রেণি ' + st.cls : ''), PF.W - 64, P.cur.y + 11);
+  if (st.school) {
+    g.fillStyle = '#8b9bb0'; g.font = '400 9.5px "Segoe UI", system-ui, sans-serif';
+    g.fillText(st.school, PF.W - 64, P.cur.y + 24);
+  }
   g.textAlign = 'left';
   P.cur.y += 26;
 
@@ -7799,6 +7803,72 @@ async function buildPortfolio(st) {
     g.fillStyle = '#7a8aa0'; g.font = '400 9.5px "Segoe UI", system-ui, sans-serif';
     g.fillText('বিষয়ভিত্তিক তথ্য এখনো নেই।', 580, P.cur.y + 12);
     P.cur.y += 96;
+  }
+
+
+  /* সঠিক / ভুল / স্কিপড */
+  {
+    let right = 0, wrong = 0, skipped = 0;
+    rows.forEach(r => {
+      const ans = r.answers;
+      if (!Array.isArray(ans) || !ans.length) { skipped += (r.total || 0); return; }
+      ans.forEach(a => { if (a.ok === true) right++; else if (a.ok === false) wrong++; else skipped++; });
+    });
+    if (right + wrong + skipped > 0) {
+      await P.section('সঠিক · ভুল · বাদ / Answer Statistics', 90);
+      g = P.cur.g;
+      const items = [['সঠিক', right], ['ভুল', wrong], ['বাদ', skipped]];
+      const tw = (PF.W - 128 - 20) / 3;
+      items.forEach((it, i) => {
+        const x = 64 + i * (tw + 10);
+        g.fillStyle = '#F2F6FB'; g.fillRect(x, P.cur.y, tw, 44);
+        g.strokeStyle = '#dbe3ee'; g.strokeRect(x, P.cur.y, tw, 44);
+        g.fillStyle = PF.NAVY; g.font = '700 17px "Segoe UI", system-ui, sans-serif';
+        g.textAlign = 'center'; g.fillText(bn(it[1]), x + tw / 2, P.cur.y + 24);
+        g.fillStyle = '#78889e'; g.font = '400 9.5px "Segoe UI", system-ui, sans-serif';
+        g.fillText(it[0], x + tw / 2, P.cur.y + 37);
+        g.textAlign = 'left';
+      });
+      P.cur.y += 60;
+    }
+  }
+
+  /* মাসিক অগ্রগতি */
+  if (rows.length) {
+    const byMonth = {};
+    rows.forEach(r => {
+      const d = new Date(r.at);
+      const k = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+      byMonth[k] = byMonth[k] || { n: 0, sum: 0 };
+      byMonth[k].n++; byMonth[k].sum += Number(r.pct) || 0;
+    });
+    const mrows = Object.keys(byMonth).sort().map(k => [
+      k, byMonth[k].n, Math.round(byMonth[k].sum / byMonth[k].n) + '%'
+    ]);
+    if (mrows.length) {
+      await P.section('মাসিক অগ্রগতি / Monthly Progress', 70);
+      await P.table(['মাস', 'পরীক্ষা', 'গড়'], [64, 640, 880], mrows);
+    }
+  }
+
+  /* সেরা ও দুর্বল বিষয় */
+  {
+    const subjAll = {};
+    rows.forEach(r => (r.answers || []).forEach(a => {
+      const kk = a.subject || 'সাধারণ';
+      subjAll[kk] = subjAll[kk] || { t: 0, ok: 0 };
+      subjAll[kk].t++; if (a.ok) subjAll[kk].ok++;
+    }));
+    const arr = Object.keys(subjAll)
+      .map(k => [k, Math.round(subjAll[k].ok / subjAll[k].t * 100)])
+      .sort((a, b) => b[1] - a[1]);
+    if (arr.length >= 2) {
+      await P.section('সেরা ও দুর্বল বিষয় / Strength & Weakness', 70);
+      await P.para([
+        'সেরা বিষয়: ' + arr[0][0] + ' — ' + arr[0][1] + '%',
+        'সবচেয়ে দুর্বল: ' + arr[arr.length - 1][0] + ' — ' + arr[arr.length - 1][1] + '%'
+      ], { size: 11, lineHeight: 22 });
+    }
   }
 
   /* পরীক্ষার ইতিহাস — সব */
