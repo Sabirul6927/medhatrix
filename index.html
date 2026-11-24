@@ -6400,10 +6400,10 @@ async function buildCertCanvas() {
 }
 
 /* --- minimal PDF writer: one JPEG page, A4 landscape --- */
-function canvasToPdfBlob(canvas) {
+function canvasToPdfBlob(canvas, portrait) {
   const jpg = canvas.toDataURL('image/jpeg', 0.93).split(',')[1];
   const bin = atob(jpg);
-  const PW = 842, PH = 595;                 /* A4 landscape points */
+  const PW = portrait ? 595 : 842, PH = portrait ? 842 : 595;
   const content = 'q ' + PW + ' 0 0 ' + PH + ' 0 0 cm /Im0 Do Q';
   const objs = [];
   objs[1] = '<< /Type /Catalog /Pages 2 0 R >>';
@@ -7364,6 +7364,452 @@ async function cloudLibUpload(file) {
   return true;
 }
 
+
+/* ================= ডিজিটাল রিপোর্ট কার্ড ================= */
+function findStudentRows(q) {
+  q = (q || '').trim().toLowerCase();
+  if (!q) return null;
+  const rows = (S.results || []);
+  const hit = rows.filter(r =>
+    (r.name || '').toLowerCase() === q ||
+    (r.phone || '') === q ||
+    (r.studentCode || '').toLowerCase() === q ||
+    (r.name || '').toLowerCase().includes(q));
+  if (!hit.length) return null;
+  const first = hit[0];
+  return { name: first.name, phone: first.phone, code: first.studentCode || '', rows: hit };
+}
+
+async function buildReportCanvas(st) {
+  const W = 1240, H = 1754;              /* A4 portrait @150dpi, scale 2 → 300dpi */
+  const c = document.createElement('canvas');
+  c.width = W * 2; c.height = H * 2;
+  const g = c.getContext('2d');
+  g.scale(2, 2);
+  const NAVY = '#0d3f74', GOLD = '#c9a227', MUTED = '#555';
+
+  g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+  g.strokeStyle = NAVY; g.lineWidth = 4; g.strokeRect(28, 28, W - 56, H - 56);
+  g.strokeStyle = GOLD; g.lineWidth = 1.5; g.strokeRect(38, 38, W - 76, H - 76);
+
+  const logo = await loadImg((document.getElementById('logo') || {}).src || '');
+  if (logo) g.drawImage(logo, 70, 62, 74, 74);
+  g.fillStyle = NAVY; g.font = '700 34px "Segoe UI", system-ui, sans-serif';
+  g.fillText(S.settings.org || 'MEDHATRIX', 158, 100);
+  g.fillStyle = GOLD; g.font = '600 14px "Segoe UI", system-ui, sans-serif';
+  g.fillText(S.settings.tagline || 'LEARN · THINK · ACHIEVE', 158, 124);
+
+  g.fillStyle = '#777'; g.font = '600 13px "Segoe UI", system-ui, sans-serif';
+  g.textAlign = 'right';
+  g.fillText('DIGITAL REPORT CARD', W - 70, 96);
+  g.fillText(new Date().toLocaleDateString('en-GB'), W - 70, 118);
+  g.textAlign = 'left';
+
+  const grd = g.createLinearGradient(70, 0, W - 70, 0);
+  grd.addColorStop(0, '#f0dca0'); grd.addColorStop(.5, GOLD); grd.addColorStop(1, '#f0dca0');
+  g.fillStyle = grd; g.fillRect(70, 152, W - 140, 3);
+
+  g.fillStyle = NAVY; g.font = '700 26px "Segoe UI", system-ui, sans-serif';
+  g.fillText(st.name || 'শিক্ষার্থী', 70, 196);
+  g.fillStyle = MUTED; g.font = '400 15px "Segoe UI", system-ui, sans-serif';
+  g.fillText((st.code ? 'আইডি: ' + st.code + '   ·   ' : '') +
+             (st.phone ? 'মোবাইল: ' + st.phone : ''), 70, 222);
+
+  const rows = st.rows.slice().sort((a, b) => new Date(a.at) - new Date(b.at));
+  const total = rows.length;
+  const avg = total ? Math.round(rows.reduce((a, r) => a + (Number(r.pct) || 0), 0) / total) : 0;
+  const best = total ? Math.max(...rows.map(r => Number(r.pct) || 0)) : 0;
+  const grade = (typeof certGrade === 'function') ? certGrade(avg) : (rows[0] ? rows[0].grade : '—');
+
+  const stats = [['মোট পরীক্ষা', total], ['গড় নম্বর', avg + '%'], ['সেরা নম্বর', best + '%'], ['গ্রেড', grade]];
+  const bw = (W - 140 - 30) / 4;
+  stats.forEach((s, i) => {
+    const x = 70 + i * (bw + 10);
+    g.fillStyle = '#f6f9fd'; g.fillRect(x, 244, bw, 66);
+    g.strokeStyle = '#dbe6f3'; g.lineWidth = 1; g.strokeRect(x, 244, bw, 66);
+    g.fillStyle = NAVY; g.font = '700 22px "Segoe UI", system-ui, sans-serif';
+    g.textAlign = 'center'; g.fillText(String(s[1]), x + bw / 2, 276);
+    g.fillStyle = '#78889e'; g.font = '400 11px "Segoe UI", system-ui, sans-serif';
+    g.fillText(s[0], x + bw / 2, 296);
+    g.textAlign = 'left';
+  });
+
+  g.fillStyle = NAVY; g.font = '700 15px "Segoe UI", system-ui, sans-serif';
+  g.fillText('পরীক্ষার ফলাফল', 70, 348);
+
+  const cols = [70, 470, 640, 760, 870, 1000];
+  const head = ['কুইজ', 'নম্বর', 'শতকরা', 'গ্রেড', 'তারিখ'];
+  g.fillStyle = '#0d3f74'; g.fillRect(70, 362, W - 140, 30);
+  g.fillStyle = '#fff'; g.font = '600 12px "Segoe UI", system-ui, sans-serif';
+  head.forEach((h, i) => g.fillText(h, cols[i] + 6, 382));
+
+  let y = 396;
+  rows.slice(-18).forEach((r, i) => {
+    if (i % 2 === 0) { g.fillStyle = '#f8fbfe'; g.fillRect(70, y, W - 140, 26); }
+    g.fillStyle = '#222'; g.font = '400 11.5px "Segoe UI", system-ui, sans-serif';
+    g.fillText(String(r.quizTitle || 'কুইজ').slice(0, 46), cols[0] + 6, y + 18);
+    g.fillText(String(r.ok) + '/' + String(r.total), cols[1] + 6, y + 18);
+    g.fillText(String(r.pct) + '%', cols[2] + 6, y + 18);
+    g.fillText(String(r.grade || '—'), cols[3] + 6, y + 18);
+    g.fillText(new Date(r.at).toLocaleDateString('en-GB'), cols[4] + 6, y + 18);
+    y += 26;
+    if (y > H - 190) return;
+  });
+
+  g.strokeStyle = '#dbe6f3'; g.strokeRect(70, 362, W - 140, y - 362);
+
+  g.fillStyle = MUTED; g.font = '400 12px "Segoe UI", system-ui, sans-serif';
+  g.fillText('এই রিপোর্ট কার্ডটি MEDHATRIX অনলাইন প্ল্যাটফর্মে সংরক্ষিত ফলাফল থেকে স্বয়ংক্রিয়ভাবে তৈরি।', 70, H - 108);
+  g.fillStyle = NAVY; g.font = '700 13px "Segoe UI", system-ui, sans-serif';
+  g.fillText((S.settings.org || 'MEDHATRIX') + ' · ' + (S.settings.founder || 'Sabirul Islam') + ', Founder', 70, H - 84);
+  g.fillStyle = '#999'; g.font = '400 11px ui-monospace, monospace';
+  g.textAlign = 'right';
+  g.fillText('RPT-' + new Date().toISOString().slice(0, 10).replace(/-/g, '') + '-' + String(total).padStart(2, '0'), W - 70, H - 84);
+  g.textAlign = 'left';
+  return c;
+}
+
+async function downloadReportCard() {
+  const q = (($('#rcQuery') || {}).value || '').trim();
+  const st = findStudentRows(q);
+  if (!st) { showToast('এই নাম / নম্বর / আইডিতে কোনো ফলাফল নেই', 'warn'); return; }
+  const btn = $('#rcBtn'); const old = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'তৈরি হচ্ছে…'; }
+  try {
+    const canvas = await buildReportCanvas(st);
+    const blob = canvasToPdfBlob(canvas, true);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'MEDHATRIX_Report_' + (st.code || st.phone || 'student') + '.pdf';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    showToast('রিপোর্ট কার্ড ডাউনলোড হয়েছে', 'success');
+  } catch (e) { showToast('ব্যর্থ: ' + e.message, 'bad'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = old; } }
+}
+
+function reportPanel() {
+  const host = document.getElementById('tab-admin');
+  if (!host || document.getElementById('rcCard')) return;
+  const card = document.createElement('div');
+  card.className = 'card'; card.id = 'rcCard';
+  card.innerHTML = '<h3>ডিজিটাল রিপোর্ট কার্ড</h3>' +
+    '<p class="hint">শিক্ষার্থীর নাম, মোবাইল নম্বর বা স্টুডেন্ট আইডি দিন — ব্র্যান্ডেড রিপোর্ট কার্ড PDF তৈরি হবে।</p>' +
+    '<input id="rcQuery" placeholder="নাম / মোবাইল / MDX-2026-000001">' +
+    '<button class="btn" id="rcBtn" style="margin-top:10px;width:100%">সম্পূর্ণ পোর্টফোলিও ডাউনলোড</button>';
+  host.insertBefore(card, host.firstChild);
+  card.querySelector('#rcBtn').onclick = downloadPortfolio;
+}
+
+/* ================= COMPLETE STUDENT PORTFOLIO (multi-page PDF) ================= */
+function pdfFromCanvases(canvases, portrait) {
+  const PW = portrait ? 595 : 842, PH = portrait ? 842 : 595;
+  const enc = new TextEncoder();
+  const parts = [], offsets = [];
+  let len = 0;
+  const push = (str) => { parts.push(str); len += str.length; };
+  const pushBytes = (u8) => { parts.push(u8); len += u8.length; };
+
+  push('%PDF-1.4\n');
+  const n = canvases.length;
+  const objCount = 2 + n * 3;            // catalog, pages, then (page, content, image) * n
+  const pageIds = [], contentIds = [], imageIds = [];
+  for (let i = 0; i < n; i++) {
+    pageIds.push(3 + i * 3); contentIds.push(4 + i * 3); imageIds.push(5 + i * 3);
+  }
+  const addObj = (id, body) => {
+    offsets[id] = len;
+    push(id + ' 0 obj\n' + body + '\nendobj\n');
+  };
+  addObj(1, '<< /Type /Catalog /Pages 2 0 R >>');
+  addObj(2, '<< /Type /Pages /Kids [' + pageIds.map(i => i + ' 0 R').join(' ') +
+            '] /Count ' + n + ' >>');
+
+  canvases.forEach((c, i) => {
+    const pid = pageIds[i], cid = contentIds[i], iid = imageIds[i];
+    const content = 'q ' + PW + ' 0 0 ' + PH + ' 0 0 cm /Im0 Do Q';
+    addObj(pid, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + PW + ' ' + PH +
+      '] /Resources << /XObject << /Im0 ' + iid + ' 0 R >> >> /Contents ' + cid + ' 0 R >>');
+    addObj(cid, '<< /Length ' + content.length + ' >>\nstream\n' + content + '\nendstream');
+
+    const b64 = c.toDataURL('image/jpeg', 0.9).split(',')[1];
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
+    offsets[iid] = len;
+    push(iid + ' 0 obj\n<< /Type /XObject /Subtype /Image /Width ' + c.width +
+      ' /Height ' + c.height + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' +
+      bytes.length + ' >>\nstream\n');
+    pushBytes(bytes);
+    push('\nendstream\nendobj\n');
+  });
+
+  const xref = len;
+  let x = 'xref\n0 ' + (objCount + 1) + '\n0000000000 65535 f \n';
+  for (let i = 1; i <= objCount; i++) x += String(offsets[i] || 0).padStart(10, '0') + ' 00000 n \n';
+  x += 'trailer\n<< /Size ' + (objCount + 1) + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF';
+  parts.push(x);
+
+  const blobs = parts.map(p => typeof p === 'string' ? enc.encode(p) : p);
+  return new Blob(blobs, { type: 'application/pdf' });
+}
+
+const PF = { W: 1240, H: 1754, NAVY: '#17365D', GOLD: '#C6A45A', BG: '#EAF0F6', INK: '#263238' };
+
+async function pfPage() {
+  const c = document.createElement('canvas');
+  c.width = PF.W * 2; c.height = PF.H * 2;
+  const g = c.getContext('2d'); g.scale(2, 2);
+  g.fillStyle = '#fff'; g.fillRect(0, 0, PF.W, PF.H);
+  return { c, g };
+}
+async function pfLetterhead(g, pageNo, totalPages, reportId, logo) {
+  const { W, H, NAVY, GOLD } = PF;
+  /* ওয়াটারমার্ক */
+  if (logo) { g.globalAlpha = 0.045; g.drawImage(logo, W / 2 - 260, H / 2 - 260, 520, 520); g.globalAlpha = 1; }
+  /* হেডার */
+  if (logo) g.drawImage(logo, 64, 48, 62, 62);
+  g.fillStyle = NAVY; g.font = '700 26px "Segoe UI", system-ui, sans-serif';
+  g.fillText(S.settings.org || 'MEDHATRIX', 140, 78);
+  g.fillStyle = GOLD; g.font = '600 11px "Segoe UI", system-ui, sans-serif';
+  g.fillText(S.settings.tagline || 'LEARN · THINK · ACHIEVE', 140, 96);
+  g.fillStyle = '#7a8aa0'; g.font = '500 10px "Segoe UI", system-ui, sans-serif';
+  g.textAlign = 'right';
+  g.fillText('OFFICIAL DIGITAL ACADEMIC PORTFOLIO', W - 64, 74);
+  g.fillText(reportId, W - 64, 92);
+  g.textAlign = 'left';
+  const grd = g.createLinearGradient(64, 0, W - 64, 0);
+  grd.addColorStop(0, NAVY); grd.addColorStop(.55, GOLD); grd.addColorStop(1, NAVY);
+  g.fillStyle = grd; g.fillRect(64, 118, W - 128, 2.5);
+  /* ফুটার */
+  g.strokeStyle = '#dbe3ee'; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(64, H - 78); g.lineTo(W - 64, H - 78); g.stroke();
+  g.fillStyle = '#7a8aa0'; g.font = '400 10px "Segoe UI", system-ui, sans-serif';
+  g.fillText(S.settings.tagline || 'LEARN · THINK · ACHIEVE', 64, H - 58);
+  g.textAlign = 'center';
+  g.fillText('Official Digital Document · ' + reportId, W / 2, H - 58);
+  g.textAlign = 'right';
+  g.fillText('Page ' + pageNo + ' / ' + totalPages, W - 64, H - 58);
+  g.textAlign = 'left';
+}
+function pfSection(g, title, y) {
+  g.fillStyle = PF.NAVY; g.font = '700 16px "Segoe UI", system-ui, sans-serif';
+  g.fillText(title, 64, y);
+  g.fillStyle = PF.GOLD; g.fillRect(64, y + 6, 54, 2);
+  return y + 26;
+}
+function pfTable(g, headers, cols, rows, y, rowH) {
+  const { W, NAVY, BG, INK } = PF;
+  g.fillStyle = NAVY; g.fillRect(64, y, W - 128, 24);
+  g.fillStyle = '#fff'; g.font = '600 11px "Segoe UI", system-ui, sans-serif';
+  headers.forEach((h, i) => g.fillText(h, cols[i] + 6, y + 16));
+  y += 24;
+  rows.forEach((r, i) => {
+    if (i % 2 === 0) { g.fillStyle = '#F7FAFD'; g.fillRect(64, y, W - 128, rowH); }
+    g.fillStyle = INK; g.font = '400 10.5px "Segoe UI", system-ui, sans-serif';
+    r.forEach((v, j) => g.fillText(String(v).slice(0, j === 0 ? 52 : 22), cols[j] + 6, y + rowH - 7));
+    y += rowH;
+  });
+  g.strokeStyle = '#dbe3ee'; g.strokeRect(64, y - rows.length * rowH - 24, W - 128, rows.length * rowH + 24);
+  return y;
+}
+
+/* ---------- পোর্টফোলিও পৃষ্ঠা তৈরি ---------- */
+function pfReportId(st) {
+  const d = new Date();
+  return 'RPT-' + d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') +
+         String(d.getDate()).padStart(2, '0') + '-' + (st.code || st.phone || 'NA').replace(/[^A-Za-z0-9]/g, '').slice(-6);
+}
+async function buildPortfolio(st) {
+  const logo = await loadImg((document.getElementById('logo') || {}).src || '');
+  const rows = (st.rows || []).slice().sort((a, b) => new Date(a.at) - new Date(b.at));
+  const reportId = pfReportId(st);
+  const total = rows.length;
+  const avg = total ? Math.round(rows.reduce((a, r) => a + (Number(r.pct) || 0), 0) / total) : 0;
+  const best = total ? Math.max(...rows.map(r => Number(r.pct) || 0)) : 0;
+  const grade = (typeof certGrade === 'function') ? certGrade(avg) : (rows[0] ? rows[0].grade : '—');
+  const pages = [];
+
+  /* --- কভার পৃষ্ঠা --- */
+  {
+    const { c, g } = await pfPage();
+    const { W, H, NAVY, GOLD } = PF;
+    g.fillStyle = NAVY; g.fillRect(0, 0, W, 250);
+    g.fillStyle = GOLD; g.fillRect(0, 250, W, 6);
+    if (logo) g.drawImage(logo, W / 2 - 52, 46, 104, 104);
+    g.fillStyle = '#fff'; g.textAlign = 'center';
+    g.font = '800 40px "Segoe UI", system-ui, sans-serif';
+    g.fillText(S.settings.org || 'MEDHATRIX', W / 2, 190);
+    g.fillStyle = GOLD; g.font = '600 14px "Segoe UI", system-ui, sans-serif';
+    g.fillText(S.settings.tagline || 'LEARN · THINK · ACHIEVE', W / 2, 216);
+
+    g.fillStyle = NAVY; g.font = '700 30px "Segoe UI", system-ui, sans-serif';
+    g.fillText('COMPLETE STUDENT', W / 2, 340);
+    g.fillText('ACADEMIC PORTFOLIO', W / 2, 378);
+    g.fillStyle = GOLD; g.fillRect(W / 2 - 90, 400, 180, 3);
+
+    g.fillStyle = PF.INK; g.font = '700 34px "Segoe UI", system-ui, sans-serif';
+    g.fillText(st.name || 'শিক্ষার্থী', W / 2, 470);
+    g.fillStyle = '#5b6b7c'; g.font = '500 15px "Segoe UI", system-ui, sans-serif';
+    g.fillText((st.code ? 'Student ID: ' + st.code : '') +
+               (st.phone ? '   ·   Mobile: ' + st.phone : ''), W / 2, 500);
+
+    const info = [
+      ['মোট কার্যক্রম', total + ' টি'],
+      ['প্রথম রেকর্ড', total ? new Date(rows[0].at).toLocaleDateString('en-GB') : '—'],
+      ['সর্বশেষ রেকর্ড', total ? new Date(rows[total - 1].at).toLocaleDateString('en-GB') : '—'],
+      ['গড় নম্বর', avg + '%']
+    ];
+    info.forEach((it, i) => {
+      const y = 580 + i * 46;
+      g.fillStyle = '#EAF0F6'; g.fillRect(W / 2 - 240, y, 480, 38);
+      g.fillStyle = NAVY; g.font = '600 13px "Segoe UI", system-ui, sans-serif';
+      g.textAlign = 'left'; g.fillText(it[0], W / 2 - 226, y + 25);
+      g.textAlign = 'right'; g.font = '700 14px "Segoe UI", system-ui, sans-serif';
+      g.fillText(it[1], W / 2 + 226, y + 25);
+    });
+
+    g.textAlign = 'center';
+    g.fillStyle = '#7a8aa0'; g.font = '400 11px "Segoe UI", system-ui, sans-serif';
+    g.fillText('এই পোর্টফোলিও MEDHATRIX-এ সংরক্ষিত প্রকৃত ফলাফল থেকে স্বয়ংক্রিয়ভাবে তৈরি', W / 2, H - 150);
+    g.fillStyle = NAVY; g.font = '700 12px "Segoe UI", system-ui, sans-serif';
+    g.fillText((S.settings.founder || 'Sabirul Islam') + ', Founder — ' + (S.settings.org || 'MEDHATRIX'), W / 2, H - 124);
+    g.fillStyle = GOLD; g.font = '600 11px ui-monospace, monospace';
+    g.fillText(reportId + '  ·  ' + new Date().toLocaleDateString('en-GB'), W / 2, H - 100);
+    pages.push(c);
+  }
+
+  /* --- প্রোফাইল ও পারফরম্যান্স --- */
+  {
+    const { c, g } = await pfPage();
+    await pfLetterhead(g, 2, 0, reportId, logo);
+    let y = 170;
+    y = pfSection(g, 'শিক্ষার্থীর পরিচিতি / Student Profile', y);
+    const prof = [
+      ['নাম', st.name || '—'],
+      ['স্টুডেন্ট আইডি', st.code || '—'],
+      ['মোবাইল', st.phone || '—'],
+      ['মোট পরীক্ষা', String(total)],
+      ['গড় নম্বর', avg + '%'],
+      ['সেরা নম্বর', best + '%'],
+      ['গ্রেড', grade]
+    ];
+    prof.forEach((p, i) => {
+      const x = 64 + (i % 2) * 570, yy = y + Math.floor(i / 2) * 44;
+      g.fillStyle = '#F7FAFD'; g.fillRect(x, yy, 550, 36);
+      g.fillStyle = '#5b6b7c'; g.font = '500 11px "Segoe UI", system-ui, sans-serif';
+      g.fillText(p[0], x + 12, yy + 23);
+      g.fillStyle = PF.INK; g.font = '700 13px "Segoe UI", system-ui, sans-serif';
+      g.fillText(String(p[1]), x + 200, yy + 23);
+    });
+    y += Math.ceil(prof.length / 2) * 44 + 20;
+
+    y = pfSection(g, 'পারফরম্যান্স সারসংক্ষেপ / Performance Summary', y);
+    const bars = [['গড়', avg], ['সেরা', best]];
+    bars.forEach((b, i) => {
+      const yy = y + i * 46;
+      g.fillStyle = '#5b6b7c'; g.font = '500 11px "Segoe UI", system-ui, sans-serif';
+      g.fillText(b[0], 64, yy + 14);
+      g.fillStyle = '#E6EDF6'; g.fillRect(140, yy, 900, 16);
+      g.fillStyle = PF.NAVY; g.fillRect(140, yy, 900 * (b[1] / 100), 16);
+      g.fillStyle = PF.INK; g.font = '700 11px "Segoe UI", system-ui, sans-serif';
+      g.fillText(b[1] + '%', 1052, yy + 14);
+    });
+    y += 120;
+
+    y = pfSection(g, 'বিষয়ভিত্তিক ফলাফল / Subject-wise Result', y);
+    const subj = {};
+    rows.forEach(r => { (r.answers || []).forEach(a => {
+      const k = a.subject || 'সাধারণ'; subj[k] = subj[k] || { t: 0, ok: 0 };
+      subj[k].t++; if (a.ok) subj[k].ok++;
+    }); });
+    const sRows = Object.keys(subj).map(k => [k, subj[k].t, Math.round(subj[k].ok / subj[k].t * 100) + '%']);
+    if (sRows.length) pfTable(g, ['বিষয়', 'প্রশ্ন', 'সঠিক %'], [64, 620, 900], sRows.slice(0, 14), y, 22);
+    else { g.fillStyle = '#7a8aa0'; g.font = '400 12px "Segoe UI", system-ui, sans-serif';
+      g.fillText('বিষয়ভিত্তিক তথ্য এখনো সংরক্ষিত হয়নি।', 64, y + 18); }
+    pages.push(c);
+  }
+
+  /* --- সম্পূর্ণ ইতিহাস (প্রতি পৃষ্ঠায় ২৪টি) --- */
+  const perPage = 24;
+  for (let i = 0; i < rows.length; i += perPage) {
+    const { c, g } = await pfPage();
+    await pfLetterhead(g, pages.length + 1, 0, reportId, logo);
+    let y = 170;
+    y = pfSection(g, 'সম্পূর্ণ পরীক্ষার ইতিহাস / Complete Examination History', y);
+    const slice = rows.slice(i, i + perPage).map((r, k) => [
+      (i + k + 1) + '. ' + (r.quizTitle || 'কুইজ'),
+      r.ok + '/' + r.total, (r.pct || 0) + '%', r.grade || '—',
+      new Date(r.at).toLocaleDateString('en-GB')
+    ]);
+    pfTable(g, ['পরীক্ষা', 'নম্বর', 'শতকরা', 'গ্রেড', 'তারিখ'],
+      [64, 640, 760, 870, 990], slice, y, 24);
+    pages.push(c);
+  }
+
+  /* --- শেষ পৃষ্ঠা: সারসংক্ষেপ ও স্বাক্ষর --- */
+  {
+    const { c, g } = await pfPage();
+    await pfLetterhead(g, pages.length + 1, 0, reportId, logo);
+    let y = 170;
+    y = pfSection(g, 'চূড়ান্ত একাডেমিক সারসংক্ষেপ / Final Academic Summary', y);
+    const lines = [
+      'মোট পরীক্ষা: ' + total + ' টি',
+      'গড় নম্বর: ' + avg + '%   ·   সেরা: ' + best + '%   ·   গ্রেড: ' + grade,
+      'প্রথম রেকর্ড: ' + (total ? new Date(rows[0].at).toLocaleDateString('en-GB') : '—'),
+      'সর্বশেষ রেকর্ড: ' + (total ? new Date(rows[total - 1].at).toLocaleDateString('en-GB') : '—')
+    ];
+    g.fillStyle = PF.INK; g.font = '400 13px "Segoe UI", system-ui, sans-serif';
+    lines.forEach((l, i) => g.fillText(l, 64, y + i * 26));
+    y += lines.length * 26 + 30;
+
+    y = pfSection(g, 'স্বীকৃতি / Authorised Signatory', y);
+    g.fillStyle = PF.INK; g.font = '600 13px "Segoe UI", system-ui, sans-serif';
+    g.fillText((S.settings.founder || 'Sabirul Islam'), 64, y + 20);
+    g.fillStyle = '#5b6b7c'; g.font = '400 11px "Segoe UI", system-ui, sans-serif';
+    g.fillText('Founder, ' + (S.settings.org || 'MEDHATRIX'), 64, y + 38);
+    g.fillText('এই ডিজিটাল নথিতে হাতে স্বাক্ষর বা সিলমোহরের প্রয়োজন নেই।', 64, y + 64);
+
+    const qrSrc = (typeof certQR === 'function') ? certQR(reportId) : '';
+    const qr = await loadImg(qrSrc);
+    if (qr) { g.drawImage(qr, PF.W - 200, y - 10, 120, 120);
+      g.fillStyle = '#7a8aa0'; g.font = '400 9px "Segoe UI", system-ui, sans-serif';
+      g.textAlign = 'center'; g.fillText('যাচাই করুন', PF.W - 140, y + 126); g.textAlign = 'left'; }
+    pages.push(c);
+  }
+
+  /* পৃষ্ঠা নম্বর বসানো — সব পৃষ্ঠায় total দেখাতে */
+  for (let i = 1; i < pages.length; i++) {
+    const g = pages[i].getContext('2d');
+    g.save(); g.scale(1, 1);
+    g.fillStyle = '#fff'; g.fillRect(PF.W * 2 - 220, PF.H * 2 - 76, 200, 30);
+    g.fillStyle = '#7a8aa0'; g.font = '400 20px "Segoe UI", system-ui, sans-serif';
+    g.textAlign = 'right';
+    g.fillText('Page ' + (i + 1) + ' / ' + pages.length, PF.W * 2 - 70, PF.H * 2 - 52);
+    g.restore();
+  }
+  return { pages, reportId };
+}
+
+async function downloadPortfolio() {
+  const q = (($('#rcQuery') || {}).value || '').trim();
+  const st = findStudentRows(q);
+  if (!st) { showToast('এই নাম / নম্বর / আইডিতে কোনো ফলাফল নেই', 'warn'); return; }
+  const btn = $('#rcBtn'); const old = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'তৈরি হচ্ছে…'; }
+  try {
+    const { pages, reportId } = await buildPortfolio(st);
+    const blob = pdfFromCanvases(pages, true);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'MEDHATRIX_Portfolio_' + (st.code || st.phone || 'student') + '.pdf';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    showToast(pages.length + ' পৃষ্ঠার পোর্টফোলিও ডাউনলোড হয়েছে', 'success');
+  } catch (e) { showToast('ব্যর্থ: ' + e.message, 'bad'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = old; } }
+}
+
 /* ---- final boot ---- */
 try { const c = JSON.parse(localStorage.getItem('mdx_sbcfg') || 'null');
   if (c && c.url && c.key) { SB.url = c.url; SB.key = c.key; } } catch (e) {}
@@ -7382,6 +7828,7 @@ setTimeout(() => { if (sbOn()) { sbSync(); } if (typeof sbPanel === 'function') 
   if (typeof certPanelDash === 'function') certPanelDash();
   if (typeof gameReportPanel === 'function') gameReportPanel();
   if (typeof renderHero === 'function') renderHero();
+  if (typeof reportPanel === 'function') reportPanel();
   if (typeof feedbackPanel === 'function') feedbackPanel();
   if (typeof practicePanel === 'function') practicePanel();
   if (typeof feedbackAdminPanel === 'function') feedbackAdminPanel();
