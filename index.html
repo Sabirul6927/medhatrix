@@ -7620,209 +7620,207 @@ function pfReportId(st) {
   return 'RPT-' + d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') +
          String(d.getDate()).padStart(2, '0') + '-' + (st.code || st.phone || 'NA').replace(/[^A-Za-z0-9]/g, '').slice(-6);
 }
+/* ================= DYNAMIC FLOW PAGINATION ENGINE ================= */
+function FlowPager(logo, reportId) {
+  this.logo = logo; this.reportId = reportId; this.pages = []; this.cur = null;
+}
+FlowPager.prototype._newPage = async function () {
+  const { c, g } = await pfPage();
+  this.pages.push(c);
+  this.cur = { c, g, y: 132 };
+  await pfLetterhead(g, this.pages.length, 0, this.reportId, this.logo);
+  return this.cur;
+};
+FlowPager.prototype.begin = async function () { await this._newPage(); return this.cur; };
+FlowPager.prototype.bottom = function () { return PF.H - 96; };
+FlowPager.prototype.space = function () { return this.bottom() - this.cur.y; };
+FlowPager.prototype.need = async function (h) {
+  if (this.space() < h) { await this._newPage(); return true; }
+  return false;
+};
+FlowPager.prototype.section = async function (title, keep) {
+  await this.need((keep || 40) + 26);
+  const g = this.cur.g;
+  this.cur.y = pfSection(g, title, this.cur.y);
+  return this.cur.y;
+};
+FlowPager.prototype.para = async function (lines, opt) {
+  opt = opt || {};
+  const lh = opt.lineHeight || 18;
+  for (const line of lines) {
+    await this.need(lh + 4);
+    const g = this.cur.g;
+    g.fillStyle = opt.color || PF.INK;
+    g.font = (opt.bold ? '700 ' : '400 ') + (opt.size || 11) + 'px "Segoe UI", system-ui, sans-serif';
+    g.fillText(line, opt.x || 64, this.cur.y + lh - 4);
+    this.cur.y += lh;
+  }
+};
+FlowPager.prototype.table = async function (headers, cols, rows, opt) {
+  opt = opt || {};
+  const rowH = opt.rowH || 19;
+  const startY = this.cur.y;
+  let i = 0;
+  while (i < rows.length) {
+    await this.need(rowH * 3 + 24);
+    let g = this.cur.g, y = this.cur.y;
+    /* হেডার প্রতিটি পৃষ্ঠায় */
+    g.fillStyle = PF.NAVY; g.fillRect(64, y, PF.W - 128, 22);
+    g.fillStyle = '#fff'; g.font = '600 10px "Segoe UI", system-ui, sans-serif';
+    headers.forEach((h, k) => g.fillText(h, cols[k] + 6, y + 15));
+    y += 22;
+    let k = 0;
+    while (i < rows.length && y + rowH < this.bottom() - 6) {
+      if (k % 2 === 0) { g.fillStyle = '#F7FAFD'; g.fillRect(64, y, PF.W - 128, rowH); }
+      g.fillStyle = PF.INK; g.font = '400 10px "Segoe UI", system-ui, sans-serif';
+      rows[i].forEach((v, j) => g.fillText(String(v).slice(0, j === 0 ? 54 : 20), cols[j] + 6, y + rowH - 6));
+      y += rowH; i++; k++;
+    }
+    g.strokeStyle = '#dbe3ee'; g.lineWidth = 1;
+    g.strokeRect(64, startY === y ? y - 22 : y - (k * rowH) - 22, PF.W - 128, (k * rowH) + 22);
+    this.cur.y = y + 8;
+  }
+};
+FlowPager.prototype.finish = function () {
+  const tot = this.pages.length;
+  for (let i = 0; i < tot; i++) {
+    const g = this.pages[i].getContext('2d');
+    g.save();
+    g.fillStyle = '#fff'; g.fillRect(PF.W * 2 - 250, PF.H * 2 - 80, 230, 36);
+    g.fillStyle = '#7a8aa0'; g.font = '400 19px "Segoe UI", system-ui, sans-serif';
+    g.textAlign = 'right';
+    g.fillText('Page ' + (i + 1) + ' / ' + tot, PF.W * 2 - 72, PF.H * 2 - 54);
+    g.restore();
+  }
+  return this.pages;
+};
+
 async function buildPortfolio(st) {
   const logo = await loadImg((document.getElementById('logo') || {}).src || '');
   const rows = (st.rows || []).slice().sort((a, b) => new Date(a.at) - new Date(b.at));
+  const plays = (st.plays || []).slice().sort((a, b) => new Date(a.at) - new Date(b.at));
+  const certs = (st.certs || []).slice();
   const reportId = pfReportId(st);
   const total = rows.length;
   const avg = total ? Math.round(rows.reduce((a, r) => a + (Number(r.pct) || 0), 0) / total) : 0;
   const best = total ? Math.max(...rows.map(r => Number(r.pct) || 0)) : 0;
   const grade = (typeof certGrade === 'function') ? certGrade(avg) : (rows[0] ? rows[0].grade : '—');
-  const pages = [];
 
-  /* --- কভার পৃষ্ঠা --- */
-  {
-    const { c, g } = await pfPage();
-    const { W, H, NAVY, GOLD } = PF;
-    g.fillStyle = NAVY; g.fillRect(0, 0, W, 250);
-    g.fillStyle = GOLD; g.fillRect(0, 250, W, 6);
-    if (logo) g.drawImage(logo, W / 2 - 52, 46, 104, 104);
-    g.fillStyle = '#fff'; g.textAlign = 'center';
-    g.font = '800 40px "Segoe UI", system-ui, sans-serif';
-    g.fillText(S.settings.org || 'MEDHATRIX', W / 2, 190);
-    g.fillStyle = GOLD; g.font = '600 14px "Segoe UI", system-ui, sans-serif';
-    g.fillText(S.settings.tagline || 'LEARN · THINK · ACHIEVE', W / 2, 216);
+  const P = new FlowPager(logo, reportId);
+  await P.begin();
+  let g = P.cur.g;
 
-    g.fillStyle = NAVY; g.font = '700 30px "Segoe UI", system-ui, sans-serif';
-    g.fillText('COMPLETE STUDENT', W / 2, 340);
-    g.fillText('ACADEMIC PORTFOLIO', W / 2, 378);
-    g.fillStyle = GOLD; g.fillRect(W / 2 - 90, 400, 180, 3);
+  /* নাম ও আইডি — এক লাইন */
+  g.fillStyle = PF.NAVY; g.font = '700 19px "Segoe UI", system-ui, sans-serif';
+  g.fillText((st.name || 'শিক্ষার্থী').slice(0, 38), 64, P.cur.y + 12);
+  g.fillStyle = '#5b6b7c'; g.font = '500 10.5px "Segoe UI", system-ui, sans-serif';
+  g.textAlign = 'right';
+  g.fillText((st.code || '') + (st.phone ? '  ·  ' + st.phone : '') + (st.cls ? '  ·  শ্রেণি ' + st.cls : ''), PF.W - 64, P.cur.y + 11);
+  g.textAlign = 'left';
+  P.cur.y += 26;
 
-    g.fillStyle = PF.INK; g.font = '700 34px "Segoe UI", system-ui, sans-serif';
-    g.fillText(st.name || 'শিক্ষার্থী', W / 2, 470);
-    g.fillStyle = '#5b6b7c'; g.font = '500 15px "Segoe UI", system-ui, sans-serif';
-    g.fillText((st.code ? 'Student ID: ' + st.code : '') +
-               (st.phone ? '   ·   Mobile: ' + st.phone : ''), W / 2, 500);
+  /* পরিসংখ্যান কার্ড */
+  await P.need(56);
+  g = P.cur.g;
+  const stats = [['পরীক্ষা', total], ['গড়', avg + '%'], ['সেরা', best + '%'], ['গ্রেড', grade]];
+  const bw = (PF.W - 128 - 24) / 4;
+  stats.forEach((sv, i) => {
+    const x = 64 + i * (bw + 8);
+    g.fillStyle = '#F2F6FB'; g.fillRect(x, P.cur.y, bw, 44);
+    g.strokeStyle = '#dbe3ee'; g.strokeRect(x, P.cur.y, bw, 44);
+    g.fillStyle = PF.NAVY; g.font = '700 16px "Segoe UI", system-ui, sans-serif';
+    g.textAlign = 'center'; g.fillText(String(sv[1]), x + bw / 2, P.cur.y + 24);
+    g.fillStyle = '#78889e'; g.font = '400 9px "Segoe UI", system-ui, sans-serif';
+    g.fillText(sv[0], x + bw / 2, P.cur.y + 37);
+    g.textAlign = 'left';
+  });
+  P.cur.y += 54;
 
-    const info = [
-      ['মোট কার্যক্রম', total + ' টি'],
-      ['প্রথম রেকর্ড', total ? new Date(rows[0].at).toLocaleDateString('en-GB') : '—'],
-      ['সর্বশেষ রেকর্ড', total ? new Date(rows[total - 1].at).toLocaleDateString('en-GB') : '—'],
-      ['গড় নম্বর', avg + '%']
-    ];
-    info.forEach((it, i) => {
-      const y = 580 + i * 46;
-      g.fillStyle = '#EAF0F6'; g.fillRect(W / 2 - 240, y, 480, 38);
-      g.fillStyle = NAVY; g.font = '600 13px "Segoe UI", system-ui, sans-serif';
-      g.textAlign = 'left'; g.fillText(it[0], W / 2 - 226, y + 25);
-      g.textAlign = 'right'; g.font = '700 14px "Segoe UI", system-ui, sans-serif';
-      g.fillText(it[1], W / 2 + 226, y + 25);
-    });
-
-    g.textAlign = 'center';
-    g.fillStyle = '#7a8aa0'; g.font = '400 11px "Segoe UI", system-ui, sans-serif';
-    g.fillText('এই পোর্টফোলিও MEDHATRIX-এ সংরক্ষিত প্রকৃত ফলাফল থেকে স্বয়ংক্রিয়ভাবে তৈরি', W / 2, H - 150);
-    g.fillStyle = NAVY; g.font = '700 12px "Segoe UI", system-ui, sans-serif';
-    g.fillText((S.settings.founder || 'Sabirul Islam') + ', Founder — ' + (S.settings.org || 'MEDHATRIX'), W / 2, H - 124);
-    g.fillStyle = GOLD; g.font = '600 11px ui-monospace, monospace';
-    g.fillText(reportId + '  ·  ' + new Date().toLocaleDateString('en-GB'), W / 2, H - 100);
-    pages.push(c);
-  }
-
-  /* --- প্রোফাইল ও পারফরম্যান্স --- */
-  {
-    const { c, g } = await pfPage();
-    await pfLetterhead(g, 2, 0, reportId, logo);
-    let y = 170;
-    y = pfSection(g, 'শিক্ষার্থীর পরিচিতি / Student Profile', y);
-    const prof = [
-      ['নাম', st.name || '—'],
-      ['স্টুডেন্ট আইডি', st.code || '—'],
-      ['মোবাইল', st.phone || '—'],
-      ['মোট পরীক্ষা', String(total)],
-      ['গড় নম্বর', avg + '%'],
-      ['সেরা নম্বর', best + '%'],
-      ['গ্রেড', grade]
-    ];
-    prof.forEach((p, i) => {
-      const x = 64 + (i % 2) * 570, yy = y + Math.floor(i / 2) * 44;
-      g.fillStyle = '#F7FAFD'; g.fillRect(x, yy, 550, 36);
-      g.fillStyle = '#5b6b7c'; g.font = '500 11px "Segoe UI", system-ui, sans-serif';
-      g.fillText(p[0], x + 12, yy + 23);
-      g.fillStyle = PF.INK; g.font = '700 13px "Segoe UI", system-ui, sans-serif';
-      g.fillText(String(p[1]), x + 200, yy + 23);
-    });
-    y += Math.ceil(prof.length / 2) * 44 + 20;
-
-    y = pfSection(g, 'পারফরম্যান্স সারসংক্ষেপ / Performance Summary', y);
-    const bars = [['গড়', avg], ['সেরা', best]];
-    bars.forEach((b, i) => {
-      const yy = y + i * 46;
-      g.fillStyle = '#5b6b7c'; g.font = '500 11px "Segoe UI", system-ui, sans-serif';
-      g.fillText(b[0], 64, yy + 14);
-      g.fillStyle = '#E6EDF6'; g.fillRect(140, yy, 900, 16);
-      g.fillStyle = PF.NAVY; g.fillRect(140, yy, 900 * (b[1] / 100), 16);
-      g.fillStyle = PF.INK; g.font = '700 11px "Segoe UI", system-ui, sans-serif';
-      g.fillText(b[1] + '%', 1052, yy + 14);
-    });
-    y += 120;
-
-    y = pfSection(g, 'বিষয়ভিত্তিক ফলাফল / Subject-wise Result', y);
-    const subj = {};
-    rows.forEach(r => { (r.answers || []).forEach(a => {
-      const k = a.subject || 'সাধারণ'; subj[k] = subj[k] || { t: 0, ok: 0 };
-      subj[k].t++; if (a.ok) subj[k].ok++;
-    }); });
-    const sRows = Object.keys(subj).map(k => [k, subj[k].t, Math.round(subj[k].ok / subj[k].t * 100) + '%']);
-    if (sRows.length) pfTable(g, ['বিষয়', 'প্রশ্ন', 'সঠিক %'], [64, 620, 900], sRows.slice(0, 14), y, 22);
-    else { g.fillStyle = '#7a8aa0'; g.font = '400 12px "Segoe UI", system-ui, sans-serif';
-      g.fillText('বিষয়ভিত্তিক তথ্য এখনো সংরক্ষিত হয়নি।', 64, y + 18); }
-    pages.push(c);
-  }
-
-  /* --- সম্পূর্ণ ইতিহাস (প্রতি পৃষ্ঠায় ২৪টি) --- */
-  const perPage = 24;
-  for (let i = 0; i < rows.length; i += perPage) {
-    const { c, g } = await pfPage();
-    await pfLetterhead(g, pages.length + 1, 0, reportId, logo);
-    let y = 170;
-    y = pfSection(g, 'সম্পূর্ণ পরীক্ষার ইতিহাস / Complete Examination History', y);
-    const slice = rows.slice(i, i + perPage).map((r, k) => [
-      (i + k + 1) + '. ' + (r.quizTitle || 'কুইজ'),
-      r.ok + '/' + r.total, (r.pct || 0) + '%', r.grade || '—',
-      new Date(r.at).toLocaleDateString('en-GB')
-    ]);
-    pfTable(g, ['পরীক্ষা', 'নম্বর', 'শতকরা', 'গ্রেড', 'তারিখ'],
-      [64, 640, 760, 870, 990], slice, y, 24);
-    pages.push(c);
-  }
-
-  /* --- চার্ট পৃষ্ঠা --- */
+  /* চার্ট */
   if (rows.length) {
-    const { c, g } = await pfPage();
-    await pfLetterhead(g, pages.length + 1, 0, reportId, logo);
-    let y = 170;
-    y = pfSection(g, 'পারফরম্যান্স গ্রাফ / Performance Trend', y);
-    pfLineChart(g, rows.map(r => Number(r.pct) || 0), 110, y, 980, 150);
-    y += 200;
-    y = pfSection(g, 'কার্যক্রমের ধরন / Activity Distribution', y);
-    const q = rows.length, pl = (st.plays || []).length;
-    pfBars(g, [['কুইজ', q], ['গেম', pl], ['সার্টিফিকেট', (st.certs || []).length]], 110, y, 900, 130);
-    y += 200;
-    y = pfSection(g, 'প্রথম ও শেষ ফলাফল / First vs Latest', y);
-    g.fillStyle = PF.INK; g.font = '400 12px "Segoe UI", system-ui, sans-serif';
-    const f = rows[0], l = rows[rows.length - 1];
-    g.fillText('প্রথম: ' + (f.quizTitle || 'কুইজ') + ' — ' + f.pct + '%  (' + new Date(f.at).toLocaleDateString('en-GB') + ')', 64, y + 14);
-    g.fillText('শেষ: ' + (l.quizTitle || 'কুইজ') + ' — ' + l.pct + '%  (' + new Date(l.at).toLocaleDateString('en-GB') + ')', 64, y + 38);
-    pages.push(c);
+    await P.section('পারফরম্যান্স গ্রাফ / Performance Trend', 130);
+    g = P.cur.g;
+    pfLineChart(g, rows.map(r => Number(r.pct) || 0), 110, P.cur.y, 980, 92);
+    P.cur.y += 118;
   }
 
-  /* --- Play & Learn ইতিহাস --- */
-  if ((st.plays || []).length) {
-    const { c, g } = await pfPage();
-    await pfLetterhead(g, pages.length + 1, 0, reportId, logo);
-    let y = 170;
-    y = pfSection(g, 'Play & Learn ইতিহাস / Game History', y);
-    const pr = st.plays.slice(0, 26).map((p, i) => [
+  /* কার্যক্রম + বিষয়ভিত্তিক */
+  await P.section('কার্যক্রম ও বিষয়ভিত্তিক ফলাফল', 110);
+  g = P.cur.g;
+  pfBars(g, [['কুইজ', total], ['গেম', plays.length], ['সার্টিফিকেট', certs.length]], 110, P.cur.y, 400, 74);
+  const subj = {};
+  rows.forEach(r => (r.answers || []).forEach(a => {
+    const kk = a.subject || 'সাধারণ'; subj[kk] = subj[kk] || { t: 0, ok: 0 };
+    subj[kk].t++; if (a.ok) subj[kk].ok++;
+  }));
+  const sKeys = Object.keys(subj).slice(0, 8);
+  if (sKeys.length) {
+    g.fillStyle = PF.NAVY; g.font = '600 10px "Segoe UI", system-ui, sans-serif';
+    g.fillText('বিষয়', 580, P.cur.y + 6); g.fillText('সঠিক', 880, P.cur.y + 6);
+    sKeys.forEach((kk, i) => {
+      const yy = P.cur.y + 22 + i * 16;
+      g.fillStyle = PF.INK; g.font = '400 9.5px "Segoe UI", system-ui, sans-serif';
+      g.fillText(kk.slice(0, 24), 580, yy);
+      g.fillStyle = PF.NAVY; g.font = '700 9.5px "Segoe UI", system-ui, sans-serif';
+      g.fillText(Math.round(subj[kk].ok / subj[kk].t * 100) + '%', 880, yy);
+    });
+    P.cur.y += Math.max(90, 30 + sKeys.length * 16);
+  } else {
+    g.fillStyle = '#7a8aa0'; g.font = '400 9.5px "Segoe UI", system-ui, sans-serif';
+    g.fillText('বিষয়ভিত্তিক তথ্য এখনো নেই।', 580, P.cur.y + 12);
+    P.cur.y += 96;
+  }
+
+  /* পরীক্ষার ইতিহাস — সব */
+  if (rows.length) {
+    await P.section('সম্পূর্ণ পরীক্ষার ইতিহাস / Complete Examination History', 60);
+    const erows = rows.map((r, i) => [
+      (i + 1) + '. ' + (r.quizTitle || 'কুইজ'), r.ok + '/' + r.total,
+      (r.pct || 0) + '%', r.grade || '—', new Date(r.at).toLocaleDateString('en-GB')
+    ]);
+    await P.table(['পরীক্ষা', 'নম্বর', 'শতকরা', 'গ্রেড', 'তারিখ'], [64, 640, 760, 870, 990], erows);
+  }
+
+  /* গেম */
+  if (plays.length) {
+    await P.section('Play & Learn / গেমের ইতিহাস', 60);
+    const prow = plays.map((p, i) => [
       (i + 1) + '. ' + (p.game || 'গেম'), (p.score || 0) + '/' + (p.total || 0),
       (p.pct || 0) + '%', (p.xp || 0) + ' XP', new Date(p.at).toLocaleDateString('en-GB')
     ]);
-    pfTable(g, ['গেম', 'নম্বর', 'শতকরা', 'XP', 'তারিখ'], [64, 640, 760, 870, 990], pr, y, 24);
-    pages.push(c);
+    await P.table(['গেম', 'নম্বর', 'শতকরা', 'XP', 'তারিখ'], [64, 640, 760, 870, 990], prow);
   }
 
-  /* --- শেষ পৃষ্ঠা: সারসংক্ষেপ ও স্বাক্ষর --- */
-  {
-    const { c, g } = await pfPage();
-    await pfLetterhead(g, pages.length + 1, 0, reportId, logo);
-    let y = 170;
-    y = pfSection(g, 'চূড়ান্ত একাডেমিক সারসংক্ষেপ / Final Academic Summary', y);
-    const lines = [
-      'মোট পরীক্ষা: ' + total + ' টি',
-      'গড় নম্বর: ' + avg + '%   ·   সেরা: ' + best + '%   ·   গ্রেড: ' + grade,
-      'প্রথম রেকর্ড: ' + (total ? new Date(rows[0].at).toLocaleDateString('en-GB') : '—'),
-      'সর্বশেষ রেকর্ড: ' + (total ? new Date(rows[total - 1].at).toLocaleDateString('en-GB') : '—')
-    ];
-    g.fillStyle = PF.INK; g.font = '400 13px "Segoe UI", system-ui, sans-serif';
-    lines.forEach((l, i) => g.fillText(l, 64, y + i * 26));
-    y += lines.length * 26 + 30;
-
-    y = pfSection(g, 'স্বীকৃতি / Authorised Signatory', y);
-    g.fillStyle = PF.INK; g.font = '600 13px "Segoe UI", system-ui, sans-serif';
-    g.fillText((S.settings.founder || 'Sabirul Islam'), 64, y + 20);
-    g.fillStyle = '#5b6b7c'; g.font = '400 11px "Segoe UI", system-ui, sans-serif';
-    g.fillText('Founder, ' + (S.settings.org || 'MEDHATRIX'), 64, y + 38);
-    g.fillText('এই ডিজিটাল নথিতে হাতে স্বাক্ষর বা সিলমোহরের প্রয়োজন নেই।', 64, y + 64);
-
-    const qrSrc = (typeof certQR === 'function') ? certQR(reportId) : '';
-    const qr = await loadImg(qrSrc);
-    if (qr) { g.drawImage(qr, PF.W - 200, y - 10, 120, 120);
-      g.fillStyle = '#7a8aa0'; g.font = '400 9px "Segoe UI", system-ui, sans-serif';
-      g.textAlign = 'center'; g.fillText('যাচাই করুন', PF.W - 140, y + 126); g.textAlign = 'left'; }
-    pages.push(c);
+  /* সার্টিফিকেট */
+  if (certs.length) {
+    await P.section('সার্টিফিকেট / Certificate History', 60);
+    const crow = certs.map((x, i) => [
+      (i + 1) + '. ' + (x.code || '—'), (x.quiz || '—'),
+      (x.pct || 0) + '%', x.grade || '—', (x.status || 'valid')
+    ]);
+    await P.table(['কোড', 'কুইজ', 'শতকরা', 'গ্রেড', 'অবস্থা'], [64, 470, 800, 900, 990], crow);
   }
 
-  /* পৃষ্ঠা নম্বর বসানো — সব পৃষ্ঠায় total দেখাতে */
-  for (let i = 1; i < pages.length; i++) {
-    const g = pages[i].getContext('2d');
-    g.save(); g.scale(1, 1);
-    g.fillStyle = '#fff'; g.fillRect(PF.W * 2 - 220, PF.H * 2 - 76, 200, 30);
-    g.fillStyle = '#7a8aa0'; g.font = '400 20px "Segoe UI", system-ui, sans-serif';
-    g.textAlign = 'right';
-    g.fillText('Page ' + (i + 1) + ' / ' + pages.length, PF.W * 2 - 70, PF.H * 2 - 52);
-    g.restore();
-  }
-  return { pages, reportId };
+  /* চূড়ান্ত সারসংক্ষেপ */
+  await P.section('চূড়ান্ত সারসংক্ষেপ / Final Academic Summary', 120);
+  await P.para([
+    'মোট পরীক্ষা: ' + total + '  ·  গেম: ' + plays.length + '  ·  সার্টিফিকেট: ' + certs.length,
+    'গড় নম্বর: ' + avg + '%  ·  সেরা: ' + best + '%  ·  গ্রেড: ' + grade +
+      (st.stats && st.stats.total_xp ? '  ·  মোট XP: ' + st.stats.total_xp : ''),
+    'প্রথম কার্যক্রম: ' + (rows.length ? new Date(rows[0].at).toLocaleDateString('en-GB') : '—') +
+      '  ·  সর্বশেষ: ' + (rows.length ? new Date(rows[rows.length - 1].at).toLocaleDateString('en-GB') : '—')
+  ], { size: 11, lineHeight: 19 });
+  await P.need(90);
+  g = P.cur.g;
+  g.fillStyle = '#5b6b7c'; g.font = '400 9.5px "Segoe UI", system-ui, sans-serif';
+  g.fillText('এই ডিজিটাল নথিতে হাতে স্বাক্ষর বা সিলমোহরের প্রয়োজন নেই।', 64, P.cur.y + 10);
+  g.fillStyle = PF.NAVY; g.font = '700 11px "Segoe UI", system-ui, sans-serif';
+  g.fillText((S.settings.founder || 'Sabirul Islam') + ', Founder — ' + (S.settings.org || 'MEDHATRIX'), 64, P.cur.y + 32);
+  const qr = await loadImg((typeof certQR === 'function') ? certQR(reportId) : '');
+  if (qr) g.drawImage(qr, PF.W - 150, P.cur.y - 18, 78, 78);
+  P.cur.y += 46;
+
+  return { pages: P.finish(), reportId };
 }
 
 async function downloadPortfolio() {
