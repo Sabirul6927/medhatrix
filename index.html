@@ -4447,7 +4447,12 @@ async function renderLibrary() {
   const box = $('#libList');
   if (!box) return;
   box.innerHTML = '<div style="color:var(--muted);font-size:.86em">লোড হচ্ছে…</div>';
-  try { LIB = await fileAll(); } catch (e) { LIB = []; }
+  const fBoard = (($('#libBoard') || {}).value) || '';
+  const fClass = (($('#libClass') || {}).value) || '';
+  let cloud = null;
+  if (typeof cloudLibList === 'function') cloud = await cloudLibList(fBoard, fClass, '');
+  if (cloud && cloud.length) { LIB = cloud; }
+  else { try { LIB = await fileAll(); } catch (e) { LIB = []; } }
   LIB.sort((a, b) => new Date(b.at) - new Date(a.at));
   const q = (($('#libSearch') || {}).value || '').toLowerCase();
   const fb = ($('#libBoard') || {}).value || '';
@@ -4488,6 +4493,16 @@ async function renderLibrary() {
 }
 
 async function downloadFile(id, btn) {
+  const rec = (typeof LIB !== 'undefined' ? LIB : []).find(x => x.id === id);
+  if (rec && rec.cloud && rec.url) {
+    const a = document.createElement('a');
+    a.href = rec.url; a.download = rec.name || 'file'; a.target = '_blank';
+    document.body.appendChild(a); a.click(); a.remove();
+    if (typeof sbOn === 'function' && sbOn())
+      try { sbFetch('/rest/v1/rpc/bump_library_download', { method: 'POST', body: { p_id: id } }); } catch (e) {}
+    showToast('ডাউনলোড শুরু হয়েছে', 'success');
+    return;
+  }
   const f = await fileGet(id);
   if (!f) { showToast('ফাইল পাওয়া যায়নি', 'error'); return; }
   const url = URL.createObjectURL(f.blob);
@@ -4548,6 +4563,13 @@ async function uploadFile(file) {
   };
   showToast('আপলোড হচ্ছে…', 'info');
   try {
+    if (typeof cloudLibUpload === 'function' && typeof sbOn === 'function' && sbOn() && SB.token) {
+      await cloudLibUpload(file);
+      $('#libTitle').value = '';
+      showToast('ক্লাউডে প্রকাশিত — সব শিক্ষার্থী দেখতে পাবে', 'success');
+      renderLibrary();
+      return;
+    }
     await filePut(rec);
     $('#libTitle').value = '';
     showToast('প্রকাশিত হয়েছে — শিক্ষার্থীরা এখন দেখতে পাবে', 'success');
@@ -7290,6 +7312,56 @@ function renderHero() {
     '</div>';
   host.insertBefore(box, host.firstChild);
   box.querySelectorAll('[data-hero]').forEach(b => b.onclick = () => switchTab(b.dataset.hero));
+}
+
+
+/* ================= ক্লাউড লাইব্রেরি ================= */
+function libPublicUrl(path) {
+  return SB.url + '/storage/v1/object/public/library/' + path.split('/').map(encodeURIComponent).join('/');
+}
+async function cloudLibList(board, cls, q) {
+  if (typeof sbOn !== 'function' || !sbOn()) return null;
+  try {
+    let url = SB.url + '/rest/v1/library_files?select=*&order=created_at.desc&limit=500';
+    if (board) url += '&board=eq.' + encodeURIComponent(board);
+    if (cls)   url += '&class=eq.' + encodeURIComponent(cls);
+    const res = await fetch(url, { headers: { 'apikey': SB.key, 'Authorization': 'Bearer ' + SB.key } });
+    if (!res.ok) return null;
+    const rows = await res.json();
+    if (!Array.isArray(rows)) return null;
+    return rows.map(r => ({
+      id: r.id, title: r.title, name: r.file_name, type: r.file_type,
+      size: r.file_size, subject: r.subject, chapter: r.chapter,
+      board: r.board, cls: r.class, at: r.created_at,
+      downloads: r.downloads, cloud: true, url: r.public_url || libPublicUrl(r.storage_path)
+    }));
+  } catch (e) { return null; }
+}
+async function cloudLibUpload(file) {
+  const board = ($('#libUpBoard') && $('#libUpBoard').value) || '';
+  const cls   = ($('#libUpClass') && $('#libUpClass').value) || '';
+  const title = (($('#libTitle') && $('#libTitle').value) || '').trim() || file.name.replace(/\.[^.]+$/, '');
+  const safe = file.name.replace(/[^\w.\-]+/g, '_');
+  const path = board + '/' + cls + '/' + Date.now() + '_' + safe;
+  const up = await fetch(SB.url + '/storage/v1/object/library/' + path.split('/').map(encodeURIComponent).join('/'), {
+    method: 'POST',
+    headers: { 'apikey': SB.key, 'Authorization': 'Bearer ' + (SB.token || SB.key),
+               'Content-Type': file.type || 'application/octet-stream', 'x-upsert': 'true' },
+    body: file
+  });
+  if (!up.ok) throw new Error('আপলোড ব্যর্থ (' + up.status + ')');
+  const ins = await fetch(SB.url + '/rest/v1/library_files', {
+    method: 'POST',
+    headers: { 'apikey': SB.key, 'Authorization': 'Bearer ' + (SB.token || SB.key),
+               'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+    body: JSON.stringify({ title, board, class: cls,
+      subject: ($('#libSub') && $('#libSub').value) || '',
+      chapter: ($('#libCh') && $('#libCh').value) || '',
+      file_name: file.name, file_type: file.type, file_size: file.size,
+      storage_path: path, public_url: libPublicUrl(path) })
+  });
+  if (!ins.ok) throw new Error('তথ্য সংরক্ষণ ব্যর্থ (' + ins.status + ')');
+  return true;
 }
 
 /* ---- final boot ---- */
