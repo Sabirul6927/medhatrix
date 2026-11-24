@@ -7077,7 +7077,7 @@ function startPlayGame(id) {
   startQuizWith(list, (S.student && S.student.name) || 'শিক্ষার্থী', g.mins, 'play');
   if (Q) { Q.playGame = g; Q.title = g.name; }
 }
-function awardPlayXP() {
+async function awardPlayXP() {
   if (!Q || !Q.playGame || !LAST) return;
   const g = Q.playGame;
   const st = playState();
@@ -7085,6 +7085,29 @@ function awardPlayXP() {
   st.xp += earned; st.games++; st.best = Math.max(st.best || 0, LAST.pct);
   save();
   showToast('+' + bn(earned) + ' XP অর্জিত!', 'success');
+
+  /* সার্ভারে XP জমা — সব ডিভাইসে এক থাকবে */
+  if (typeof sbOn !== 'function' || !sbOn()) return;
+  try {
+    const res = await fetch(SB.url + '/rest/v1/rpc/log_play_session', {
+      method: 'POST',
+      headers: { 'apikey': SB.key, 'Authorization': 'Bearer ' + SB.key,
+                 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        p_name: (Q && Q.name) || 'শিক্ষার্থী',
+        p_phone: (S.student && S.student.phone) || '',
+        p_game_id: g.id, p_game_name: g.name,
+        p_score: LAST.ok, p_total: LAST.total, p_base_xp: g.xp
+      })
+    });
+    if (res.ok) {
+      const d = await res.json();
+      if (d && typeof d.total_xp === 'number') {
+        st.xp = d.total_xp;          /* সার্ভারের হিসাবই চূড়ান্ত */
+        save();
+      }
+    }
+  } catch (e) { /* নেটওয়ার্ক না থাকলে ডিভাইসের XP থাকবে */ }
 }
 
 /* ---- final boot ---- */
