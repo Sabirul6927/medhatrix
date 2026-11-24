@@ -7668,14 +7668,15 @@ FlowPager.prototype.need = async function (h) {
   return false;
 };
 FlowPager.prototype.section = async function (title, keep) {
-  await this.need((keep || 40) + 26);
+  await this.need((keep || 40) + 44);
+  this.cur.y += 14;                      /* আগের ব্লক থেকে ফাঁক */
   const g = this.cur.g;
-  this.cur.y = pfSection(g, title, this.cur.y);
+  this.cur.y = pfSection(g, title, this.cur.y) + 16;   /* শিরোনামের পরে ফাঁক */
   return this.cur.y;
 };
 FlowPager.prototype.para = async function (lines, opt) {
   opt = opt || {};
-  const lh = opt.lineHeight || 18;
+  const lh = opt.lineHeight || 22;
   for (const line of lines) {
     await this.need(lh + 4);
     const g = this.cur.g;
@@ -7687,17 +7688,17 @@ FlowPager.prototype.para = async function (lines, opt) {
 };
 FlowPager.prototype.table = async function (headers, cols, rows, opt) {
   opt = opt || {};
-  const rowH = opt.rowH || 19;
+  const rowH = opt.rowH || 26;
   const startY = this.cur.y;
   let i = 0;
   while (i < rows.length) {
     await this.need(rowH * 3 + 24);
     let g = this.cur.g, y = this.cur.y;
     /* হেডার প্রতিটি পৃষ্ঠায় */
-    g.fillStyle = PF.NAVY; g.fillRect(64, y, PF.W - 128, 22);
+    g.fillStyle = PF.NAVY; g.fillRect(64, y, PF.W - 128, 26);
     g.fillStyle = '#fff'; g.font = '600 10px "Segoe UI", system-ui, sans-serif';
-    headers.forEach((h, k) => g.fillText(h, cols[k] + 6, y + 15));
-    y += 22;
+    headers.forEach((h, k) => g.fillText(h, cols[k] + 6, y + 18));
+    y += 26;
     let k = 0;
     while (i < rows.length && y + rowH < this.bottom() - 6) {
       if (k % 2 === 0) { g.fillStyle = '#F7FAFD'; g.fillRect(64, y, PF.W - 128, rowH); }
@@ -7706,8 +7707,8 @@ FlowPager.prototype.table = async function (headers, cols, rows, opt) {
       y += rowH; i++; k++;
     }
     g.strokeStyle = '#dbe3ee'; g.lineWidth = 1;
-    g.strokeRect(64, startY === y ? y - 22 : y - (k * rowH) - 22, PF.W - 128, (k * rowH) + 22);
-    this.cur.y = y + 8;
+    g.strokeRect(64, y - (k * rowH) - 26, PF.W - 128, (k * rowH) + 26);
+    this.cur.y = y + 12;
   }
 };
 FlowPager.prototype.finish = function () {
@@ -7715,7 +7716,7 @@ FlowPager.prototype.finish = function () {
   for (let i = 0; i < tot; i++) {
     const g = this.pages[i].getContext('2d');
     g.save();
-    g.fillStyle = '#fff'; g.fillRect(PF.W * 2 - 250, PF.H * 2 - 80, 230, 36);
+    g.fillStyle = '#fff'; g.fillRect(PF.W * 2 - 260, PF.H * 2 - 140, 250, 60);
     g.fillStyle = '#7a8aa0'; g.font = '400 19px "Segoe UI", system-ui, sans-serif';
     g.textAlign = 'right';
     g.fillText('Page ' + (i + 1) + ' / ' + tot, PF.W * 2 - 72, PF.H * 2 - 54);
@@ -7763,14 +7764,14 @@ async function buildPortfolio(st) {
     g.fillText(sv[0], x + bw / 2, P.cur.y + 37);
     g.textAlign = 'left';
   });
-  P.cur.y += 54;
+  P.cur.y += 62;
 
   /* চার্ট */
   if (rows.length) {
     await P.section('পারফরম্যান্স গ্রাফ / Performance Trend', 130);
     g = P.cur.g;
     pfLineChart(g, rows.map(r => Number(r.pct) || 0), 110, P.cur.y, 980, 92);
-    P.cur.y += 118;
+    P.cur.y += 132;
   }
 
   /* কার্যক্রম + বিষয়ভিত্তিক */
@@ -7787,13 +7788,13 @@ async function buildPortfolio(st) {
     g.fillStyle = PF.NAVY; g.font = '600 10px "Segoe UI", system-ui, sans-serif';
     g.fillText('বিষয়', 580, P.cur.y + 6); g.fillText('সঠিক', 880, P.cur.y + 6);
     sKeys.forEach((kk, i) => {
-      const yy = P.cur.y + 22 + i * 16;
+      const yy = P.cur.y + 26 + i * 18;
       g.fillStyle = PF.INK; g.font = '400 9.5px "Segoe UI", system-ui, sans-serif';
       g.fillText(kk.slice(0, 24), 580, yy);
       g.fillStyle = PF.NAVY; g.font = '700 9.5px "Segoe UI", system-ui, sans-serif';
       g.fillText(Math.round(subj[kk].ok / subj[kk].t * 100) + '%', 880, yy);
     });
-    P.cur.y += Math.max(90, 30 + sKeys.length * 16);
+    P.cur.y += Math.max(100, 40 + sKeys.length * 18);
   } else {
     g.fillStyle = '#7a8aa0'; g.font = '400 9.5px "Segoe UI", system-ui, sans-serif';
     g.fillText('বিষয়ভিত্তিক তথ্য এখনো নেই।', 580, P.cur.y + 12);
@@ -7838,7 +7839,7 @@ async function buildPortfolio(st) {
       (st.stats && st.stats.total_xp ? '  ·  মোট XP: ' + st.stats.total_xp : ''),
     'প্রথম কার্যক্রম: ' + (rows.length ? new Date(rows[0].at).toLocaleDateString('en-GB') : '—') +
       '  ·  সর্বশেষ: ' + (rows.length ? new Date(rows[rows.length - 1].at).toLocaleDateString('en-GB') : '—')
-  ], { size: 11, lineHeight: 19 });
+  ], { size: 11, lineHeight: 24 });
   await P.need(90);
   g = P.cur.g;
   g.fillStyle = '#5b6b7c'; g.font = '400 9.5px "Segoe UI", system-ui, sans-serif';
